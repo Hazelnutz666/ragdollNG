@@ -1,0 +1,2336 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ragdoll Sandbox 3D</title>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "cannon-es": "https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js"
+  }
+}
+</script>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --panel-2: #1e222b;
+    --border: #2a2f3a;
+    --text: #d8dde6;
+    --muted: #7d8595;
+    --accent: #4f9dff;
+    --accent-2: #2f6fd1;
+    --danger: #ff5d5d;
+    --toolbar-h: 48px;
+    --status-h: 26px;
+    --left-w: 230px;
+    --right-w: 290px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 13px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
+  button, select, input { font: inherit; color: inherit; }
+  a { color: inherit; text-decoration: none; }
+  .hidden { display: none !important; }
+
+  #app {
+    display: grid; height: 100vh; width: 100vw;
+    grid-template-columns: var(--left-w) minmax(0, 1fr) var(--right-w);
+    grid-template-rows: var(--toolbar-h) 1fr var(--status-h);
+    grid-template-areas: "top top top" "left view right" "status status status";
+  }
+
+  #toolbar { grid-area: top; min-width: 0; display: flex; align-items: center; gap: 10px; padding: 0 12px;
+    background: var(--panel); border-bottom: 1px solid var(--border); overflow-x: auto; overflow-y: hidden; }
+  .brand { font-weight: 700; letter-spacing: .3px; white-space: nowrap; }
+  .brand span { color: var(--accent); }
+  .group { display: flex; gap: 4px; align-items: center; flex-shrink: 0; }
+  .sep { width: 1px; height: 24px; background: var(--border); flex-shrink: 0; }
+  .spacer { flex: 1; }
+  .btn { background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px;
+    padding: 5px 10px; cursor: pointer; white-space: nowrap; display: inline-block; }
+  .btn:hover { border-color: var(--accent); }
+  .btn:disabled { opacity: .4; cursor: default; border-color: var(--border); }
+  .btn.primary, .btn.active { background: var(--accent-2); border-color: var(--accent); color: #fff; }
+  .btn.danger:hover { border-color: var(--danger); color: var(--danger); }
+  .btn.wide { width: 100%; margin-top: 8px; }
+  .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+  .btn-grid .btn { padding: 6px 4px; font-size: 12px; text-align: left; overflow: hidden; text-overflow: ellipsis; }
+  .btn-grid.three { grid-template-columns: 1fr 1fr 1fr; }
+  .btn-grid.three .btn { text-align: center; }
+  .input { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; }
+  select.input { cursor: pointer; }
+  .stat { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .tb-label { color: var(--muted); font-size: 12px; }
+  .narrow-only { display: none; }
+
+  .sidebar { background: var(--panel); overflow-y: auto; padding: 8px; }
+  #left { grid-area: left; border-right: 1px solid var(--border); }
+  #right { grid-area: right; border-left: 1px solid var(--border); }
+  .panel { background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px; margin-bottom: 8px; }
+  .panel h2 { margin: 0 0 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted);
+    display: flex; justify-content: space-between; align-items: center; }
+  .muted { color: var(--muted); margin: 0; font-size: 12px; }
+  .row { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; align-items: center; margin-bottom: 8px; }
+  .row label { font-size: 12px; }
+  .row output { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 12px; }
+  .row input[type=range] { grid-column: 1 / -1; width: 100%; accent-color: var(--accent); margin: 2px 0 0; }
+  .field { display: grid; grid-template-columns: 80px 1fr; gap: 8px; align-items: center; margin-bottom: 8px; font-size: 12px; }
+  .check { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; font-size: 12px; cursor: pointer; }
+  .check input { accent-color: var(--accent); }
+  .insp-title { display: flex; justify-content: space-between; font-weight: 600; margin-bottom: 10px; }
+  .sub { font-size: 11px; color: var(--muted); margin: 10px 0 6px; text-transform: uppercase; letter-spacing: .6px; }
+
+  .char-list { display: flex; flex-direction: column; gap: 3px; margin-top: 8px; max-height: 220px; overflow-y: auto; }
+  .char-item { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-radius: 6px; cursor: pointer;
+    border: 1px solid transparent; font-size: 12px; }
+  .char-item:hover { background: var(--panel); }
+  .char-item.sel { border-color: var(--accent); background: var(--panel); }
+  .char-item .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .char-item .name { flex: 1; }
+  .char-item .mode { color: var(--muted); }
+  .char-item .x { background: none; border: none; color: var(--muted); cursor: pointer; padding: 0 2px; }
+  .char-item .x:hover { color: var(--danger); }
+
+  #viewport { grid-area: view; position: relative; overflow: hidden; background: #12151b; min-width: 0; min-height: 0; }
+  #world { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+  #world.tool-delete { cursor: not-allowed; }
+  #world.tool-explode, #world.tool-goto, #world.spawning { cursor: crosshair; }
+  #world.dragging { cursor: grabbing; }
+  #pause-overlay { position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+    background: rgba(0,0,0,.55); border: 1px solid var(--border); padding: 4px 14px; border-radius: 999px;
+    font-weight: 600; letter-spacing: 2px; font-size: 12px; pointer-events: none; display: none; }
+  #viewport.paused #pause-overlay { display: block; }
+  #cam-help { position: absolute; left: 10px; bottom: 8px; font-size: 11px; color: var(--muted);
+    background: rgba(0,0,0,.4); padding: 3px 8px; border-radius: 6px; pointer-events: none; }
+  #load-error { position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
+    text-align: center; padding: 20px; color: var(--danger); }
+
+  #statusbar { grid-area: status; display: flex; align-items: center; gap: 16px; padding: 0 12px;
+    background: var(--panel); border-top: 1px solid var(--border); color: var(--muted); font-size: 12px; }
+  #status-hint { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #status-counts { white-space: nowrap; }
+
+  @media (max-width: 1000px) {
+    #app { grid-template-columns: minmax(0, 1fr); grid-template-areas: "top" "view" "status"; }
+    .narrow-only { display: inline-block; }
+    .sidebar { position: fixed; top: var(--toolbar-h); bottom: var(--status-h); width: 270px; z-index: 10;
+      transition: transform .18s ease; box-shadow: 0 0 24px rgba(0,0,0,.5); }
+    #left { left: 0; transform: translateX(-100%); }
+    #right { right: 0; transform: translateX(100%); }
+    #left.open, #right.open { transform: none; }
+    .brand, #toolbar .lbl { display: none; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <header id="toolbar">
+    <button class="btn narrow-only" id="btn-left" title="Spawn &amp; environment panel">☰</button>
+    <div class="brand">Ragdoll <span>Sandbox 3D</span></div>
+    <div class="group">
+      <button class="btn primary" id="btn-play" title="Play / Pause (Space)">⏸ <span class="lbl">Pause</span></button>
+      <button class="btn" id="btn-step" title="Advance one frame (only while paused)" disabled>⏭ <span class="lbl">Step</span></button>
+      <button class="btn" id="btn-reset" title="Reset environment (R)">⟲ <span class="lbl">Reset</span></button>
+    </div>
+    <div class="sep"></div>
+    <div class="group" id="tool-group"></div>
+    <button class="btn" id="btn-wind" title="Toggle wind (W)">🌬 <span class="lbl">Wind</span></button>
+    <div class="sep"></div>
+    <div class="group">
+      <span class="tb-label lbl">Physics</span>
+      <select class="input" id="sel-preset" title="Physics preset"></select>
+    </div>
+    <div class="spacer"></div>
+    <a class="btn" href="index.html" title="Switch to the 2D sandbox">2D</a>
+    <div class="stat" id="stat-fps">-- FPS</div>
+    <button class="btn narrow-only" id="btn-right" title="Physics &amp; inspector panel">⚙</button>
+  </header>
+
+  <aside id="left" class="sidebar">
+    <section class="panel">
+      <h2>Spawn objects</h2>
+      <div id="spawn-list" class="btn-grid"></div>
+      <button class="btn danger wide" id="btn-clear" title="Remove every object and ragdoll">🗑 Clear all</button>
+    </section>
+    <section class="panel">
+      <h2>Characters</h2>
+      <button class="btn wide" id="btn-spawn-ragdoll" style="margin-top:0">🧍 Spawn ragdoll</button>
+      <div class="field" style="margin:8px 0 0">
+        <label for="sel-all-mode">Set all to</label>
+        <select class="input" id="sel-all-mode"></select>
+      </div>
+      <div id="char-list" class="char-list"></div>
+    </section>
+    <section class="panel">
+      <h2>Environment</h2>
+      <div id="env-controls"></div>
+    </section>
+    <section class="panel">
+      <h2>Camera</h2>
+      <label class="check"><input type="checkbox" id="chk-follow"> Follow selected character (C)</label>
+      <div class="btn-grid">
+        <button class="btn" id="btn-focus" title="Focus selection (F)">🎯 Focus</button>
+        <button class="btn" id="btn-cam-reset">🎥 Reset view</button>
+      </div>
+    </section>
+  </aside>
+
+  <main id="viewport">
+    <canvas id="world"></canvas>
+    <div id="pause-overlay">PAUSED</div>
+    <div id="cam-help">Right-drag: orbit · Middle-drag / arrows: pan · Wheel: zoom (while dragging: push/pull)</div>
+    <div id="load-error"></div>
+  </main>
+
+  <aside id="right" class="sidebar">
+    <section class="panel">
+      <h2>Physics</h2>
+      <div id="param-list"></div>
+      <button class="btn wide" id="btn-realistic">↺ Reset to Realistic Physics</button>
+    </section>
+    <section class="panel" id="char-panel">
+      <h2><span>Character</span><span id="char-name"></span></h2>
+      <div id="char-modes" class="btn-grid"></div>
+      <div class="sub">Heading</div>
+      <div class="btn-grid">
+        <button class="btn" id="btn-turn-l" title="Turn left 45°">⟲ Left 45°</button>
+        <button class="btn" id="btn-turn-r" title="Turn right 45°">Right 45° ⟳</button>
+        <button class="btn" id="btn-face-cam" title="Walk away from the camera">⬆ Into screen</button>
+        <button class="btn" id="btn-face-rand">🎲 Random</button>
+      </div>
+      <p class="muted" id="char-status" style="margin-top:8px"></p>
+    </section>
+    <section class="panel">
+      <h2>Inspector</h2>
+      <div id="inspector"></div>
+    </section>
+  </aside>
+
+  <footer id="statusbar">
+    <span id="status-hint"></span>
+    <span id="status-counts"></span>
+  </footer>
+</div>
+
+<script>
+  // Shown if the module script fails to load (e.g. CDN offline).
+  window.addEventListener('error', (e) => {
+    if (window.__sandboxReady) return;
+    const el = document.getElementById('load-error');
+    el.style.display = 'flex';
+    el.textContent = 'Failed to start the 3D sandbox: ' + (e.message || 'could not load three.js / cannon-es from the CDN.');
+  });
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import * as CANNON from 'cannon-es';
+
+/* =====================================================================
+ * Helpers
+ * ===================================================================== */
+const DEG = Math.PI / 180;
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+const rand = (lo, hi) => lo + Math.random() * (hi - lo);
+const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+const V3 = (x = 0, y = 0, z = 0) => new CANNON.Vec3(x, y, z);
+const normAngle = (a) => { a = (a + Math.PI) % (2 * Math.PI); if (a < 0) a += 2 * Math.PI; return a - Math.PI; };
+
+/* =====================================================================
+ * Config & tunables (SI units: metres, kilograms, seconds)
+ * ===================================================================== */
+const CONFIG = {
+  STEP: 1 / 120,            // fixed physics timestep (s)
+  MAX_STEPS_PER_FRAME: 8,   // avoid spiral of death after tab switches
+  ARENA: 26,                // half-extent of the walled arena (m)
+  CEILING: 40,
+  MAX_SPEED: 60,            // m/s velocity clamp (keeps joints stable)
+  MAX_ANG_SPEED: 40,        // rad/s
+  G: 9.81,
+};
+
+/* =====================================================================
+ * Global physics parameters + presets (PresetManager applies these)
+ * ===================================================================== */
+const DEFAULT_PARAMS = {
+  gravity: 1, gravityTilt: 0, gravityHeading: 0, timeScale: 1, airResistance: 0.02,
+  frictionMul: 1, bounceAdd: 0, jointStiffness: 0.9, jointSoftness: 0.1, muscle: 1,
+};
+const PARAMS = { ...DEFAULT_PARAMS };
+
+const PARAM_DEFS = [
+  { key: 'gravity',        label: 'Gravity',              min: 0,   max: 3,   step: 0.01,  fmt: v => v.toFixed(2) + ' g' },
+  { key: 'gravityTilt',    label: 'Gravity tilt',         min: 0,   max: 180, step: 1,     fmt: v => Math.round(v) + '°' },
+  { key: 'gravityHeading', label: 'Gravity tilt heading', min: -180, max: 180, step: 1,    fmt: v => Math.round(v) + '°' },
+  { key: 'timeScale',      label: 'Time scale',           min: 0.1, max: 2,   step: 0.05,  fmt: v => v.toFixed(2) + '×' },
+  { key: 'airResistance',  label: 'Air resistance',       min: 0,   max: 0.8, step: 0.005, fmt: v => v.toFixed(3) },
+  { key: 'frictionMul',    label: 'Global friction',      min: 0,   max: 2,   step: 0.01,  fmt: v => '×' + v.toFixed(2) },
+  { key: 'bounceAdd',      label: 'Extra bounciness',     min: 0,   max: 1,   step: 0.01,  fmt: v => '+' + v.toFixed(2) },
+  { key: 'jointStiffness', label: 'Joint stiffness',      min: 0.1, max: 1,   step: 0.01,  fmt: v => v.toFixed(2) },
+  { key: 'jointSoftness',  label: 'Joint softness',       min: 0,   max: 1,   step: 0.01,  fmt: v => v.toFixed(2) },
+  { key: 'muscle',         label: 'Muscle strength',      min: 0,   max: 2,   step: 0.01,  fmt: v => '×' + v.toFixed(2) },
+];
+
+const PHYSICS_PRESETS = {
+  realistic: { label: 'Realistic',     params: {} },
+  moon:      { label: 'Moon gravity',  params: { gravity: 0.165, airResistance: 0 } },
+  zero:      { label: 'Zero gravity',  params: { gravity: 0, airResistance: 0.01 } },
+  heavy:     { label: 'Heavy gravity', params: { gravity: 2.5 } },
+  bouncy:    { label: 'Super bouncy',  params: { bounceAdd: 0.85 } },
+  slippery:  { label: 'Low friction',  params: { frictionMul: 0.05 } },
+  chaos: {
+    label: 'Chaos mode',
+    params: { gravity: 1.3, bounceAdd: 0.5, frictionMul: 0.4, timeScale: 1.2 },
+    // Wandering gravity and random explosions.
+    tick(pm, dt) {
+      const app = pm.app, t = (pm.t += dt);
+      app.physics.setParam('gravityTilt', Math.round(Math.abs(35 * Math.sin(t * 0.35) + 12 * Math.sin(t * 1.1))));
+      app.physics.setParam('gravityHeading', Math.round(normAngle(t * 0.6) / DEG));
+      if (t > pm.nextEvent) {
+        pm.nextEvent = t + rand(2.5, 5);
+        const A = CONFIG.ARENA * 0.6;
+        app.tools.explode(new THREE.Vector3(rand(-A, A), rand(0.2, 2), rand(-A, A)), 5, 16);
+      }
+    },
+  },
+};
+
+/* =====================================================================
+ * Materials — physical presets referenced by key. Density in kg/m³
+ * ("effective" — crates are hollow). Add an entry and it appears in
+ * the inspector automatically.
+ * ===================================================================== */
+const MATERIALS = {
+  wood:   { label: 'Wood',   density: 150,  friction: 0.6,  restitution: 0.15, color: '#a0703c', rough: 0.85, metal: 0 },
+  metal:  { label: 'Metal',  density: 1500, friction: 0.35, restitution: 0.05, color: '#8a95a3', rough: 0.35, metal: 0.8 },
+  stone:  { label: 'Stone',  density: 900,  friction: 0.8,  restitution: 0.05, color: '#6f6a62', rough: 0.95, metal: 0 },
+  rubber: { label: 'Rubber', density: 300,  friction: 0.9,  restitution: 0.85, color: '#d9534f', rough: 0.7,  metal: 0 },
+  bouncy: { label: 'Bouncy', density: 250,  friction: 0.6,  restitution: 0.98, color: '#3fcf8e', rough: 0.5,  metal: 0 },
+  ice:    { label: 'Ice',    density: 400,  friction: 0.02, restitution: 0.05, color: '#9fd6ea', rough: 0.1,  metal: 0.1 },
+  flesh:  { label: 'Flesh',  density: 1000, friction: 0.8,  restitution: 0.05, color: '#e0b48f', rough: 0.8,  metal: 0 },
+};
+const GROUND_PROPS = { material: 'stone', friction: 0.8, restitution: 0.1 };
+
+const mat = (p) => MATERIALS[p.material] || MATERIALS.wood;
+const effFriction = (p) => clamp((p.friction ?? mat(p).friction) * PARAMS.frictionMul, 0, 2);
+const effRestitution = (p) => clamp((p.restitution ?? mat(p).restitution) + PARAMS.bounceAdd, 0, 0.98);
+
+/** Writes an entity's effective surface values into a cannon material.
+ *  Friction is stored as sqrt so cannon's product rule gives the geometric mean. */
+function applySurface(cmat, p) {
+  cmat.friction = Math.sqrt(effFriction(p));
+  cmat.restitution = effRestitution(p);
+}
+
+// cannon multiplies restitutions; a sandbox reads better when the bouncier surface wins
+// (a bouncy platform should bounce a ragdoll). Patch the contact factory to use max().
+{
+  const orig = CANNON.Narrowphase.prototype.createContactEquation;
+  CANNON.Narrowphase.prototype.createContactEquation = function (bi, bj, si, sj, osi, osj) {
+    const c = orig.call(this, bi, bj, si, sj, osi, osj);
+    const ma = si.material || bi.material, mb = sj.material || bj.material;
+    if (ma && mb) c.restitution = Math.max(ma.restitution, mb.restitution);
+    return c;
+  };
+}
+
+/* =====================================================================
+ * PhysicsManager — cannon world, fixed-step loop, gravity, boundaries
+ * ===================================================================== */
+class PhysicsManager {
+  constructor(app) {
+    this.app = app;
+    const w = (this.world = new CANNON.World());
+    w.broadphase = new CANNON.NaiveBroadphase();
+    w.solver.iterations = 14;
+    w.solver.tolerance = 1e-4;
+    // Resting objects sleep (big win for piles); ragdoll parts opt out.
+    w.allowSleep = true;
+    w.defaultContactMaterial.contactEquationStiffness = 1e8;
+    w.defaultContactMaterial.contactEquationRelaxation = 3;
+    w.defaultContactMaterial.frictionEquationStiffness = 1e8;
+
+    // Bodies of the same ragdoll never collide with each other (joints handle them).
+    const bp = w.broadphase, need = bp.needBroadphaseCollision.bind(bp);
+    bp.needBroadphaseCollision = (a, b) => {
+      if (a.ragdollId && a.ragdollId === b.ragdollId) return false;
+      return need(a, b);
+    };
+
+    this.paused = false;
+    this.acc = 0;
+    this.simTime = 0;
+    this.gravityVec = new CANNON.Vec3(0, -CONFIG.G, 0);
+    this.up = new CANNON.Vec3(0, 1, 0);
+    this.listeners = { prestep: [], poststep: [] };
+
+    this._buildBounds();
+    this.applyAllParams();
+  }
+
+  _buildBounds() {
+    const A = CONFIG.ARENA, H = CONFIG.CEILING, T = 2;
+    this.groundMat = new CANNON.Material('ground');
+    applySurface(this.groundMat, GROUND_PROPS);
+    const ground = new CANNON.Body({ type: CANNON.Body.STATIC, material: this.groundMat });
+    ground.addShape(new CANNON.Plane());
+    ground.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
+    ground.isGround = true;
+    this.world.addBody(ground);
+    this.ground = ground;
+    // Invisible walls + ceiling: thick, so nothing tunnels through.
+    const boxes = [
+      [V3(A + T, H / 2, 0), V3(T, H / 2, A + 2 * T)], [V3(-A - T, H / 2, 0), V3(T, H / 2, A + 2 * T)],
+      [V3(0, H / 2, A + T), V3(A + 2 * T, H / 2, T)], [V3(0, H / 2, -A - T), V3(A + 2 * T, H / 2, T)],
+      [V3(0, H + T, 0), V3(A + 2 * T, T, A + 2 * T)],
+    ];
+    this.bounds = boxes.map(([p, h]) => {
+      const b = new CANNON.Body({ type: CANNON.Body.STATIC, material: this.groundMat, position: p });
+      b.addShape(new CANNON.Box(h));
+      b.isBoundary = true;
+      this.world.addBody(b);
+      return b;
+    });
+  }
+
+  on(evt, fn) { this.listeners[evt].push(fn); }
+
+  setParam(key, value) {
+    PARAMS[key] = value;
+    this.applyAllParams();
+    this.app.ui && this.app.ui.syncParam(key);
+  }
+
+  applyAllParams() {
+    // Gravity: magnitude plus a tilt away from straight down, rotated by heading.
+    const g = PARAMS.gravity * CONFIG.G, t = PARAMS.gravityTilt * DEG, h = PARAMS.gravityHeading * DEG;
+    this.gravityVec.set(Math.sin(t) * Math.sin(h) * g, -Math.cos(t) * g, Math.sin(t) * Math.cos(h) * g);
+    this.world.gravity.copy(this.gravityVec);
+    if (g > 1e-3) { this.up.copy(this.gravityVec); this.up.scale(-1 / g, this.up); } else this.up.set(0, 1, 0);
+
+    applySurface(this.groundMat, GROUND_PROPS);
+    const app = this.app;
+    if (app.objects) for (const e of app.objects.entities) app.objects.refreshSurface(e);
+
+    // Joint stiffness / softness map onto SPOOK constraint parameters.
+    this.jointStiffness = Math.pow(10, 4.5 + 3.5 * PARAMS.jointStiffness);
+    this.jointRelax = 3 + 9 * PARAMS.jointSoftness;
+    for (const c of this.world.constraints) this.tuneConstraint(c);
+    this.wakeAll();
+    for (const b of this.world.bodies) {
+      if (b.type === CANNON.Body.DYNAMIC) { b.linearDamping = clamp(PARAMS.airResistance + (b.extraDamping || 0), 0, 0.99); }
+    }
+  }
+
+  wakeAll() { for (const b of this.world.bodies) if (b.type === CANNON.Body.DYNAMIC) b.wakeUp(); }
+
+  tuneConstraint(c) {
+    if (c.isMouse) return;
+    for (const eq of c.equations) eq.setSpookParams(this.jointStiffness, this.jointRelax, CONFIG.STEP);
+  }
+
+  /** Advance by real frame time; runs fixed sub-steps scaled by time scale. */
+  update(frameDt) {
+    if (this.paused) return 0;
+    this.acc += Math.min(frameDt, 0.1) * PARAMS.timeScale;
+    let n = 0;
+    while (this.acc >= CONFIG.STEP && n < CONFIG.MAX_STEPS_PER_FRAME) {
+      this.step();
+      this.acc -= CONFIG.STEP;
+      n++;
+    }
+    if (n === CONFIG.MAX_STEPS_PER_FRAME) this.acc = 0;
+    return n;
+  }
+
+  step() {
+    const h = CONFIG.STEP;
+    for (const fn of this.listeners.prestep) fn(h);
+    this.world.step(h);
+    this.simTime += h;
+    this._sanitize();
+    for (const fn of this.listeners.poststep) fn(h);
+  }
+
+  /** Clamp velocities and recover bodies that escaped or went NaN. */
+  _sanitize() {
+    const A = CONFIG.ARENA + 3;
+    for (const b of this.world.bodies) {
+      if (b.type !== CANNON.Body.DYNAMIC) continue;
+      const v = b.velocity, w = b.angularVelocity, p = b.position;
+      const s = v.length();
+      if (s > CONFIG.MAX_SPEED) v.scale(CONFIG.MAX_SPEED / s, v);
+      const ws = w.length();
+      if (ws > CONFIG.MAX_ANG_SPEED) w.scale(CONFIG.MAX_ANG_SPEED / ws, w);
+      const bad = !Number.isFinite(p.x + p.y + p.z + v.x + v.y + v.z);
+      if (bad || Math.abs(p.x) > A || Math.abs(p.z) > A || p.y < -3 || p.y > CONFIG.CEILING + 5) {
+        this.app.objects.recover(b, bad);
+      }
+    }
+  }
+}
+
+/* =====================================================================
+ * Ragdoll — 10 parts (head, torso, upper/lower arms & legs) joined by
+ * cone-twist joints (neck, shoulders, hips) and hinges (elbows, knees).
+ * Built facing +Z, character's left is +X.
+ * ===================================================================== */
+const RAGDOLL_COLORS = {
+  shirts: ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'],
+  pants:  ['#1f2937', '#374151', '#1e3a8a', '#3f3f46', '#57534e'],
+  skins:  ['#f1c27d', '#e0ac69', '#c68642', '#8d5524', '#ffdbac'],
+};
+let ragdollCounter = 0;
+
+// Part layout at scale 1: half extents, centre height, x offset, mass.
+const RAG_PARTS = {
+  torso:  { half: [0.18, 0.30, 0.11], y: 1.22, x: 0,     mass: 32, color: 'shirt' },
+  head:   { radius: 0.12,             y: 1.66, x: 0,     mass: 5,  color: 'skin' },
+  uArmL:  { half: [0.055, 0.15, 0.055], y: 1.33, x: 0.25,  mass: 2.5, color: 'shirt' },
+  uArmR:  { half: [0.055, 0.15, 0.055], y: 1.33, x: -0.25, mass: 2.5, color: 'shirt' },
+  lArmL:  { half: [0.05, 0.15, 0.05], y: 1.03, x: 0.25,  mass: 2,  color: 'skin' },
+  lArmR:  { half: [0.05, 0.15, 0.05], y: 1.03, x: -0.25, mass: 2,  color: 'skin' },
+  uLegL:  { half: [0.075, 0.22, 0.075], y: 0.70, x: 0.1,  mass: 9,  color: 'pants' },
+  uLegR:  { half: [0.075, 0.22, 0.075], y: 0.70, x: -0.1, mass: 9,  color: 'pants' },
+  lLegL:  { half: [0.06, 0.21, 0.06], y: 0.27, x: 0.1,   mass: 5,  color: 'pants', foot: true },
+  lLegR:  { half: [0.06, 0.21, 0.06], y: 0.27, x: -0.1,  mass: 5,  color: 'pants', foot: true },
+};
+// Joints: parent, child, pivot (world, scale 1), type and limits.
+const RAG_JOINTS = {
+  neck:      { a: 'torso', b: 'head',  pivot: [0, 1.53, 0],     type: 'cone', cone: 40, twist: 50 },
+  shoulderL: { a: 'torso', b: 'uArmL', pivot: [0.25, 1.48, 0],  type: 'cone', cone: 120, twist: 40 },
+  shoulderR: { a: 'torso', b: 'uArmR', pivot: [-0.25, 1.48, 0], type: 'cone', cone: 120, twist: 40 },
+  elbowL:    { a: 'uArmL', b: 'lArmL', pivot: [0.25, 1.18, 0],  type: 'hinge', min: -150, max: 0 },
+  elbowR:    { a: 'uArmR', b: 'lArmR', pivot: [-0.25, 1.18, 0], type: 'hinge', min: -150, max: 0 },
+  hipL:      { a: 'torso', b: 'uLegL', pivot: [0.1, 0.92, 0],   type: 'cone', cone: 80, twist: 25 },
+  hipR:      { a: 'torso', b: 'uLegR', pivot: [-0.1, 0.92, 0],  type: 'cone', cone: 80, twist: 25 },
+  kneeL:     { a: 'uLegL', b: 'lLegL', pivot: [0.1, 0.48, 0],   type: 'hinge', min: 0, max: 150 },
+  kneeR:     { a: 'uLegR', b: 'lLegR', pivot: [-0.1, 0.48, 0],  type: 'hinge', min: 0, max: 150 },
+};
+
+class Ragdoll {
+  static STAND_H = 1.22; // torso centre above the soles, scale 1
+
+  /** Builds bodies + joints. pos = foot position on the ground, yaw = heading. */
+  static build(physics, entity, pos, yaw, scale) {
+    const s = scale, world = physics.world, props = entity.props;
+    const rot = new CANNON.Quaternion().setFromAxisAngle(V3(0, 1, 0), yaw);
+    const place = (x, y, z) => rot.vmult(V3(x * s, y * s, z * s)).vadd(V3(pos.x, pos.y, pos.z));
+    const cmat = new CANNON.Material('flesh');
+    applySurface(cmat, props);
+    const parts = {}, joints = {}, constraints = [];
+
+    for (const [name, d] of Object.entries(RAG_PARTS)) {
+      const body = new CANNON.Body({ mass: d.mass * s * s * s, material: cmat, angularDamping: 0.3, allowSleep: false });
+      if (d.radius) body.addShape(new CANNON.Sphere(d.radius * s));
+      else body.addShape(new CANNON.Box(V3(d.half[0] * s, d.half[1] * s, d.half[2] * s)));
+      if (d.foot) {
+        // Foot: a flat box under the shin, offset forward — gives a real base to stand on.
+        body.addShape(new CANNON.Box(V3(0.065 * s, 0.03 * s, 0.12 * s)), V3(0, -0.24 * s, 0.05 * s));
+      }
+      body.position.copy(place(d.x, d.y, 0));
+      body.quaternion.copy(rot);
+      body.ragdollId = entity.id;
+      body.entity = entity;
+      body.partName = name;
+      body.extraDamping = 0;
+      body.linearDamping = PARAMS.airResistance;
+      body.length = (d.radius ? d.radius * 2 : d.half[1] * 2) * s;
+      world.addBody(body);
+      parts[name] = body;
+    }
+
+    for (const [name, j] of Object.entries(RAG_JOINTS)) {
+      const A = parts[j.a], B = parts[j.b];
+      const pw = place(j.pivot[0], j.pivot[1], j.pivot[2]);
+      const pA = A.pointToLocalFrame(pw), pB = B.pointToLocalFrame(pw);
+      let c;
+      if (j.type === 'cone') {
+        const axis = name === 'neck' ? V3(0, 1, 0) : V3(0, -1, 0);
+        c = new CANNON.ConeTwistConstraint(A, B, {
+          pivotA: pA, pivotB: pB, axisA: axis, axisB: axis.clone(),
+          angle: j.cone * DEG, twistAngle: j.twist * DEG, collideConnected: false, maxForce: 1e6,
+        });
+      } else {
+        c = new CANNON.HingeConstraint(A, B, {
+          pivotA: pA, pivotB: pB, axisA: V3(1, 0, 0), axisB: V3(1, 0, 0), collideConnected: false, maxForce: 1e6,
+        });
+      }
+      physics.tuneConstraint(c);
+      world.addConstraint(c);
+      constraints.push(c);
+      // Effective inertia about the pivot: child as a rod + everything hanging below it.
+      const child = B, below = { uArmL: 'lArmL', uArmR: 'lArmR', uLegL: 'lLegL', uLegR: 'lLegR' }[j.b];
+      let I = child.mass * child.length * child.length / 3;
+      if (below) I += parts[below].mass * child.length * child.length;
+      if (j.b === 'head') I = child.mass * (0.14 * s) ** 2 * 1.4;
+      // Twist about the limb's long axis (local Y) has a far smaller inertia.
+      const It = child.inertia.y * 1.3 + (below ? parts[below].inertia.y : 0);
+      joints[name] = { ...j, name, A, B, c, I, It,
+        lo: (j.min ?? 0) * DEG, hi: (j.max ?? 0) * DEG };
+    }
+
+    let totalMass = 0;
+    for (const b of Object.values(parts)) totalMass += b.mass;
+    return { parts, joints, constraints, scale: s, totalMass, material: cmat };
+  }
+}
+
+/* =====================================================================
+ * CharacterController — per-ragdoll state machine. Only applies forces
+ * and joint torques (PD "muscles"); the ragdoll stays fully physical.
+ * ===================================================================== */
+const CHARACTER_STATES = {
+  idle:  { label: 'Idle',    icon: '🧍' },
+  walk:  { label: 'Walk',    icon: '🚶' },
+  run:   { label: 'Run',     icon: '🏃' },
+  jump:  { label: 'Jump',    icon: '⤴' },
+  fall:  { label: 'Fall',    icon: '🫠' },
+  flail: { label: 'Flail',   icon: '🙌' },
+  sit:   { label: 'Sit',     icon: '🪑' },
+};
+const CHAR = {
+  poseKp: 260, poseKd: 22, legGain: 1.6, limitKp: 900, limitKd: 30,
+  uprightKp: 340, uprightKd: 24, supportKp: 70, supportKd: 12,
+  moveAccel: 14, maxTorque: 900,
+};
+
+const _q1 = new CANNON.Quaternion(), _q2 = new CANNON.Quaternion(), _q3 = new CANNON.Quaternion();
+const _v1 = new CANNON.Vec3(), _v2 = new CANNON.Vec3(), _v3 = new CANNON.Vec3();
+const _qT = new CANNON.Quaternion();
+
+/** Converts quaternion q (w ≥ 0 hemisphere) into an axis*angle vector `out`. */
+function quatToRotVec(q, out) {
+  let { x, y, z, w } = q;
+  if (w < 0) { x = -x; y = -y; z = -z; w = -w; }
+  const sinHalf = Math.sqrt(x * x + y * y + z * z);
+  if (sinHalf < 1e-6) { out.set(2 * x, 2 * y, 2 * z); return out; }
+  const angle = 2 * Math.atan2(sinHalf, w);
+  const k = angle / sinHalf;
+  out.set(x * k, y * k, z * k);
+  return out;
+}
+
+/** Pose quaternion in the parent frame: flex (about X, + = forward), abduct (about Z), twist (about Y). */
+function poseQuat(flex, abduct, twist, out) {
+  out.setFromEuler(-flex * DEG, twist * DEG, abduct * DEG, 'XYZ');
+  return out;
+}
+
+class CharacterController {
+  constructor(entity, physics) {
+    this.entity = entity;
+    this.physics = physics;
+    this.mode = 'idle';
+    this.heading = entity.spawnYaw ?? rand(-Math.PI, Math.PI);
+    this.t = 0;
+    this.phase = 0;
+    this.stun = 0;
+    this.recover = 1;
+    this.grounded = false;
+    this.footDown = false;
+    this.height = 0;
+    this.jumpPhase = 'ready';
+    this.jumpT = 0;
+    this.jumpReadyAt = 0;
+    this.nextFlail = 0;
+    this.flailPose = null;
+    this.stuck = 0;
+    this.target = null;        // THREE.Vector3 to walk to, or null
+    this.muscle = 1;           // per-character strength multiplier
+    this.grabbed = false;
+    this._fwd = new CANNON.Vec3();
+  }
+
+  setMode(mode) {
+    if (!CHARACTER_STATES[mode]) return;
+    this.mode = mode;
+    this.jumpPhase = 'ready';
+    if (mode !== 'fall') this.stun = 0;
+    if (mode !== 'walk' && mode !== 'run') this.target = null;
+  }
+
+  knock(seconds) { this.stun = Math.max(this.stun, seconds); }
+  get conscious() { return this.mode !== 'fall' && this.stun <= 0 && !this.grabbed; }
+
+  statusText() {
+    if (this.grabbed) return 'Being carried';
+    if (this.mode === 'fall') return 'Limp';
+    if (this.stun > 0) return `Knocked out (${this.stun.toFixed(1)}s)`;
+    if (this.target) return 'Walking to target';
+    if (!this.grounded && this.mode !== 'sit') return 'Airborne';
+    return 'OK';
+  }
+
+  /** Called once per physics step before the world integrates. */
+  update(dt) {
+    const rig = this.entity.rig;
+    if (!rig) return;
+    const P = rig.parts, J = rig.joints, s = rig.scale, M = rig.totalMass;
+    const up = this.physics.up, gMag = this.physics.gravityVec.length();
+    this.t += dt;
+
+    // Joint range limits always apply — limp bodies still don't fold backwards.
+    for (const j of Object.values(J)) if (j.type === 'hinge') this._hinge(j, null, 0);
+
+    this.stun = Math.max(0, this.stun - dt);
+    if (!this.conscious) { this.recover = 0; this.grounded = false; return; }
+    this.recover = Math.min(1, this.recover + dt * 0.9);
+    const k = this.recover * this.muscle * PARAMS.muscle;
+    if (k <= 0.001) return;
+
+    const torso = P.torso;
+    const standH = Ragdoll.STAND_H * s;
+    this.height = this._probe(torso.position, up, standH * 1.6);
+    const lying = this.height < standH * 0.55;
+    if (this.footDown) this.footT = this.t;
+    // Grounded = feet touched recently, or the ground is within leg reach.
+    this.grounded = lying || this.t - (this.footT ?? -1) < 0.15 || this.height < standH * 1.06;
+
+    // Basis: forward on the plane perpendicular to "up".
+    const fwd = this._fwd.set(Math.sin(this.heading), 0, Math.cos(this.heading));
+    fwd.vsub(up.scale(fwd.dot(up), _v3), fwd);
+    if (fwd.lengthSquared() < 1e-6) fwd.set(1, 0, 0);
+    fwd.normalize();
+    const vel = torso.velocity;
+    const vUp = vel.dot(up);
+
+    // Steering toward a target point.
+    if (this.target && (this.mode === 'walk' || this.mode === 'run')) {
+      const dx = this.target.x - torso.position.x, dz = this.target.z - torso.position.z;
+      if (Math.hypot(dx, dz) < 0.7 * s) { this.target = null; this.setMode('idle'); this.entity.app.ui.refreshCharacters(); }
+      else this.heading = Math.atan2(dx, dz);
+    }
+
+    let pose = null, supportH = standH, lean = 0, speed = null, upright = 1, gain = 1, support = true;
+    switch (this.mode) {
+      case 'idle': {
+        const b = Math.sin(this.t * 2);
+        pose = { neck: [0, 0, 0], shoulderL: [3 * b, 8, 0], shoulderR: [-3 * b, -8, 0], elbowL: -12, elbowR: -10,
+                 hipL: [2, 3, 0], hipR: [2, -3, 0], kneeL: 3, kneeR: 3 };
+        speed = 0;
+        break;
+      }
+      case 'walk': case 'run': {
+        const run = this.mode === 'run';
+        if (this.grounded) this.phase += dt * Math.PI * 2 * (run ? 2.3 : 1.4);
+        const sp = Math.sin(this.phase), cp = Math.cos(this.phase);
+        const A = run ? 40 : 25, K = run ? 85 : 40, AR = run ? 50 : 22;
+        pose = { neck: [run ? -8 : 0, 0, 0],
+                 hipL: [A * sp, 3, 0], hipR: [-A * sp, -3, 0],
+                 kneeL: 6 + K * Math.max(0, cp), kneeR: 6 + K * Math.max(0, -cp),
+                 shoulderL: [-AR * sp, 8, 0], shoulderR: [AR * sp, -8, 0],
+                 elbowL: run ? -85 : -20, elbowR: run ? -85 : -20 };
+        lean = run ? 12 : 4;
+        speed = (run ? 4.2 : 1.6) * Math.sqrt(s);
+        gain = run ? 1.3 : 1;
+        supportH = standH * (run ? 0.97 : 0.99);
+        this._unstick(dt, speed);
+        break;
+      }
+      case 'jump': {
+        if (this.jumpPhase === 'ready' && this.grounded && this.t > this.jumpReadyAt) { this.jumpPhase = 'crouch'; this.jumpT = this.t; }
+        if (this.jumpPhase === 'crouch') {
+          pose = { neck: [0, 0, 0], shoulderL: [-30, 10, 0], shoulderR: [-30, -10, 0], elbowL: -20, elbowR: -20,
+                   hipL: [60, 4, 0], hipR: [60, -4, 0], kneeL: 100, kneeR: 100 };
+          supportH = standH * 0.72; speed = 0;
+          if (this.t - this.jumpT > 0.22) { this._launch(up, 6.5 * Math.sqrt(s)); this.jumpPhase = 'air'; this.jumpT = this.t; }
+        } else if (this.jumpPhase === 'air') {
+          pose = { neck: [-10, 0, 0], shoulderL: [160, 15, 0], shoulderR: [150, -15, 0], elbowL: -10, elbowR: -15,
+                   hipL: [35, 5, 0], hipR: [25, -5, 0], kneeL: 55, kneeR: 45 };
+          support = false;
+          if (this.t - this.jumpT > 0.3 && this.grounded) { this.jumpPhase = 'ready'; this.jumpReadyAt = this.t + 0.45; }
+        } else {
+          pose = { neck: [0, 0, 0], shoulderL: [5, 8, 0], shoulderR: [5, -8, 0], elbowL: -15, elbowR: -15,
+                   hipL: [3, 3, 0], hipR: [3, -3, 0], kneeL: 4, kneeR: 4 };
+          speed = 0;
+        }
+        break;
+      }
+      case 'flail': {
+        if (this.t >= this.nextFlail || !this.flailPose) {
+          this.nextFlail = this.t + rand(0.08, 0.2);
+          this.flailPose = {
+            neck: [rand(-35, 35), rand(-20, 20), rand(-40, 40)],
+            shoulderL: [rand(-60, 180), rand(0, 110), rand(-30, 30)], shoulderR: [rand(-60, 180), rand(-110, 0), rand(-30, 30)],
+            elbowL: rand(-150, 0), elbowR: rand(-150, 0),
+            hipL: [rand(-30, 100), rand(-10, 40), 0], hipR: [rand(-30, 100), rand(-40, 10), 0],
+            kneeL: rand(0, 140), kneeR: rand(0, 140) };
+        }
+        pose = this.flailPose;
+        support = false; upright = 0.15; gain = 1.8;
+        break;
+      }
+      case 'sit': {
+        pose = { neck: [0, 0, 0], shoulderL: [25, 10, 0], shoulderR: [30, -10, 0], elbowL: -45, elbowR: -50,
+                 hipL: [88, 6, 0], hipR: [92, -6, 0], kneeL: 85, kneeR: 90 };
+        support = false; lean = -5;
+        break;
+      }
+    }
+
+    // Joint muscles toward the pose (legs carry the load → stronger).
+    if (pose) for (const name in pose) {
+      const j = J[name]; if (!j) continue;
+      const legGain = name.startsWith('hip') || name.startsWith('knee') ? CHAR.legGain : 1;
+      const g = gain * legGain * k;
+      if (j.type === 'hinge') this._hinge(j, pose[name] * DEG, g);
+      else this._ball(j, pose[name], g);
+    }
+
+    // Balance + heading: torque the torso toward upright, facing `heading`, leaning `lean`.
+    if (upright > 0) {
+      // Target = (rotate world-Y onto `up`) * yaw(heading) * pitch(lean)
+      const align = _q1.setFromVectors(V3(0, 1, 0), up);
+      const yaw = _q2.setFromAxisAngle(V3(0, 1, 0), this.heading);
+      const pitch = _q3.setFromAxisAngle(V3(1, 0, 0), lean * DEG);
+      align.mult(yaw, _qT); _qT.mult(pitch, _qT);
+      const inv = torso.quaternion.conjugate(_q1);
+      const err = _qT.mult(inv, _q2);                 // world-frame rotation from current to target
+      const rv = quatToRotVec(err, _v2);
+      const kk = upright * k, w = torso.angularVelocity;
+      const acc = _v3.set((CHAR.uprightKp * rv.x - CHAR.uprightKd * w.x) * kk,
+                          (CHAR.uprightKp * rv.y - CHAR.uprightKd * w.y) * kk,
+                          (CHAR.uprightKp * rv.z - CHAR.uprightKd * w.z) * kk);
+      // Torso inertia per local axis, boosted for the limbs hanging off it.
+      const aL = torso.quaternion.conjugate(_q1).vmult(acc, _v2);
+      const In = torso.inertia;
+      aL.x *= In.x * 3; aL.y *= In.y * 2; aL.z *= In.z * 3;
+      const tq = torso.quaternion.vmult(aL, _v3);
+      const max = CHAR.maxTorque * s ** 4 * Math.max(0.3, kk);
+      const l = tq.length(); if (l > max) tq.scale(max / l, tq);
+      torso.torque.vadd(tq, torso.torque);
+    }
+
+    // Leg support: a spring that holds the torso at standing height while feet have ground.
+    if (support && this.grounded && gMag > 0.01) {
+      const err = supportH - this.height;
+      if (this.height < standH * 1.25) {
+        let a = gMag * 0.92 + CHAR.supportKp * err - CHAR.supportKd * vUp;
+        a = clamp(a, 0, gMag * 2.6 + 15) * Math.min(1, k);
+        torso.force.vadd(up.scale(a * M, _v3), torso.force);
+      }
+    }
+
+    // Locomotion: push the body toward the target horizontal velocity (only with ground contact).
+    if (speed !== null && this.grounded && !lying) {
+      const vH = _v3.copy(vel); vH.vsub(up.scale(vel.dot(up), _v2), vH);
+      const des = fwd.scale(speed, _v2);
+      des.vsub(vH, des); const dv = des;
+      const maxA = CHAR.moveAccel * Math.min(1, k);
+      let a = dv.scale(8, dv); const al = a.length(); if (al > maxA) a.scale(maxA / al, a);
+      // Spread over every part (like a whole-body push) so it doesn't tip the torso.
+      a.scale(0.85, a);
+      for (const b of Object.values(P)) { b.force.x += a.x * b.mass; b.force.y += a.y * b.mass; b.force.z += a.z * b.mass; }
+    }
+  }
+
+  /** PD torque toward a ball-joint pose [flex, abduct, twist] (degrees) in the parent frame. */
+  _ball(j, p, gain) {
+    const A = j.A, B = j.B;
+    const target = poseQuat(p[0], p[1], p[2], _q1);
+    const rel = A.quaternion.conjugate(_q2).mult(B.quaternion, _q2);      // qA⁻¹ qB
+    const errLocal = target.mult(rel.conjugate(_q3), _q3);                // qT qRel⁻¹ (in A frame)
+    const rv = quatToRotVec(errLocal, _v1);
+    A.quaternion.vmult(rv, rv);                                           // to world
+    const wr = _v2; B.angularVelocity.vsub(A.angularVelocity, wr);
+    // Desired angular acceleration (world) → child frame → scale by per-axis inertia → world torque.
+    const acc = _v3.set((CHAR.poseKp * rv.x - CHAR.poseKd * wr.x) * gain,
+                        (CHAR.poseKp * rv.y - CHAR.poseKd * wr.y) * gain,
+                        (CHAR.poseKp * rv.z - CHAR.poseKd * wr.z) * gain);
+    const qInv = B.quaternion.conjugate(_q1);
+    const aL = qInv.vmult(acc, _v1);
+    aL.x *= j.I; aL.y *= j.It; aL.z *= j.I;
+    const tq = B.quaternion.vmult(aL, _v3);
+    this._applyPair(A, B, tq, j.I);
+  }
+
+  /** Hinge: PD toward `target` (rad, null = only enforce limits). */
+  _hinge(j, target, gain) {
+    const A = j.A, B = j.B;
+    const rel = A.quaternion.conjugate(_q2).mult(B.quaternion, _q2);
+    let { x, w } = rel; if (w < 0) { x = -x; w = -w; }
+    const angle = 2 * Math.atan2(x, w);                  // rotation about the shared X axis
+    const axis = A.quaternion.vmult(_v1.set(1, 0, 0), _v1);
+    B.angularVelocity.vsub(A.angularVelocity, _v2); const wr = _v2.dot(axis);
+    let acc = 0;
+    if (angle < j.lo) acc += CHAR.limitKp * (j.lo - angle) - CHAR.limitKd * Math.min(0, wr);
+    else if (angle > j.hi) acc += CHAR.limitKp * (j.hi - angle) - CHAR.limitKd * Math.max(0, wr);
+    if (target !== null) {
+      const tgt = clamp(target, j.lo, j.hi);
+      acc += (CHAR.poseKp * (tgt - angle) - CHAR.poseKd * wr) * gain;
+    }
+    if (acc === 0) return;
+    this._applyPair(A, B, axis.scale(acc * j.I, _v3), j.I);
+  }
+
+  _applyPair(A, B, tq, I) {
+    const max = CHAR.maxTorque * 0.5 * Math.max(I, 0.05) * 3;
+    const l = tq.length(); if (l > max) tq.scale(max / l, tq);
+    B.torque.vadd(tq, B.torque);
+    A.torque.vsub(tq, A.torque);
+  }
+
+  /** Distance from `from` to the nearest surface below (along -up), ignoring own parts. */
+  _probe(from, up, maxLen) {
+    const to = _v3.set(from.x - up.x * maxLen, from.y - up.y * maxLen, from.z - up.z * maxLen);
+    let best = maxLen;
+    const id = this.entity.id;
+    this.physics.world.raycastAll(from, to, { skipBackfaces: true, collisionFilterMask: -1 }, (r) => {
+      if (r.body.ragdollId === id || r.body.isMouse) return;
+      if (r.distance < best) best = r.distance;
+    });
+    return best;
+  }
+
+  _launch(up, v) {
+    const vel = this.entity.rig.parts.torso.velocity;
+    const add = up.scale(v - Math.max(0, vel.dot(up)), _v2);
+    for (const b of Object.values(this.entity.rig.parts)) b.velocity.vadd(add, b.velocity);
+  }
+
+  /** Walking but not getting anywhere (or near the arena edge) → turn around. */
+  _unstick(dt, speed) {
+    const t = this.entity.rig.parts.torso;
+    const vh = Math.hypot(t.velocity.x, t.velocity.z);
+    const A = CONFIG.ARENA - 2;
+    const nearEdge = (Math.abs(t.position.x) > A && Math.sign(Math.sin(this.heading)) === Math.sign(t.position.x)) ||
+                     (Math.abs(t.position.z) > A && Math.sign(Math.cos(this.heading)) === Math.sign(t.position.z));
+    this.stuck = vh < speed * 0.25 ? this.stuck + dt : 0;
+    if (nearEdge || this.stuck > 1.6) {
+      this.heading = nearEdge ? Math.atan2(-t.position.x, -t.position.z) + rand(-0.6, 0.6) : this.heading + rand(1.6, 3.6);
+      this.stuck = 0;
+      this.target = null;
+    }
+  }
+}
+
+/* =====================================================================
+ * ObjectManager — reusable object definitions + entity lifecycle
+ * ===================================================================== */
+/**
+ * Object definitions. `shape` is box | sphere | cylinder; `size` is full
+ * extents [x, y, z] for boxes, `radius`/`height` otherwise. `elevate`
+ * lifts the spawn point, `tilt` rotates about local Z (ramps). Use
+ * `build` for composite objects. Add an entry here to add an object.
+ */
+const OBJECT_DEFS = {
+  crate:      { label: 'Wooden crate',   icon: '📦', shape: 'box', size: [0.8, 0.8, 0.8], material: 'wood' },
+  metal:      { label: 'Metal block',    icon: '🔩', shape: 'box', size: [0.6, 0.6, 0.6], material: 'metal' },
+  ball:       { label: 'Heavy ball',     icon: '⚫', shape: 'sphere', radius: 0.45, material: 'metal' },
+  rubberBall: { label: 'Rubber ball',    icon: '🔴', shape: 'sphere', radius: 0.3, material: 'rubber' },
+  barrel:     { label: 'Barrel',         icon: '🛢', shape: 'cylinder', radius: 0.32, height: 0.9, material: 'wood', color: '#7a4f2a' },
+  wall:       { label: 'Wall (static)',  icon: '🧱', shape: 'box', size: [4, 2.5, 0.3], material: 'stone', isStatic: true },
+  movWall:    { label: 'Wall (movable)', icon: '🚪', shape: 'box', size: [2.4, 2, 0.25], material: 'wood' },
+  platform:   { label: 'Platform',       icon: '▭', shape: 'box', size: [3, 0.2, 2], material: 'wood', isStatic: true, elevate: 1.4 },
+  bouncy:     { label: 'Bouncy pad',     icon: '🟩', shape: 'box', size: [3, 0.2, 3], material: 'bouncy', isStatic: true },
+  ramp:       { label: 'Ramp',           icon: '◢', shape: 'box', size: [4, 0.2, 2.2], material: 'wood', isStatic: true, tilt: 20 },
+  bridge:     { label: 'Bridge',         icon: '🌉', build: 'bridge', span: 7, material: 'wood' },
+  dominoes:   { label: 'Dominoes',       icon: '🁢', build: 'dominoes', count: 14, material: 'wood' },
+};
+
+let entityCounter = 0;
+
+class ObjectManager {
+  constructor(app) {
+    this.app = app;
+    this.entities = [];
+  }
+
+  get physics() { return this.app.physics; }
+  get renderer() { return this.app.renderer; }
+
+  _newEntity(kind, defKey, props) {
+    return { id: ++entityCounter, kind, defKey, props, bodies: [], constraints: [], meshes: [], app: this.app };
+  }
+
+  /** Spawn an object of `type` so that its base rests at `pos` (THREE.Vector3). */
+  spawn(type, pos, yaw = 0) {
+    const def = OBJECT_DEFS[type];
+    if (!def) return null;
+    if (def.build === 'bridge') return this._spawnBridge(def, pos, yaw);
+    if (def.build === 'dominoes') return this._spawnDominoes(def, pos, yaw);
+    const props = {
+      name: def.label, material: def.material, isStatic: !!def.isStatic, yaw, tilt: def.tilt || 0,
+      friction: null, restitution: null, color: def.color || null,
+      shape: def.shape, size: def.size ? [...def.size] : null, radius: def.radius, height: def.height, mass: null,
+    };
+    const e = this._newEntity('object', type, props);
+    const body = new CANNON.Body({ material: new CANNON.Material(type), sleepSpeedLimit: 0.15, sleepTimeLimit: 0.8 });
+    body.entity = e;
+    e.bodies.push(body);
+    this._applyShape(e);
+    const half = this.halfHeight(props);
+    body.position.set(pos.x, pos.y + half + (def.elevate || 0) + 0.01, pos.z);
+    this._applyOrientation(e);
+    this.refreshSurface(e);
+    this._applyMassAndType(e);
+    this.physics.world.addBody(body);
+    this.entities.push(e);
+    this.renderer.addEntity(e);
+    return e;
+  }
+
+  /** Vertical half-extent of a (possibly tilted) object's shape. */
+  halfHeight(p) {
+    if (p.shape === 'sphere') return p.radius;
+    if (p.shape === 'cylinder') return p.height / 2;
+    const t = (p.tilt || 0) * DEG;
+    return Math.abs(Math.sin(t)) * p.size[0] / 2 + Math.cos(t) * p.size[1] / 2;
+  }
+
+  volume(p) {
+    if (p.shape === 'sphere') return 4 / 3 * Math.PI * p.radius ** 3;
+    if (p.shape === 'cylinder') return Math.PI * p.radius ** 2 * p.height;
+    return p.size[0] * p.size[1] * p.size[2];
+  }
+
+  _applyShape(e) {
+    const p = e.props, b = e.bodies[0];
+    b._area = undefined;
+    while (b.shapes.length) b.removeShape(b.shapes[0]);
+    if (p.shape === 'sphere') b.addShape(new CANNON.Sphere(p.radius));
+    else if (p.shape === 'cylinder') b.addShape(new CANNON.Cylinder(p.radius, p.radius, p.height, 16));
+    else b.addShape(new CANNON.Box(V3(p.size[0] / 2, p.size[1] / 2, p.size[2] / 2)));
+  }
+
+  _applyOrientation(e) {
+    const b = e.bodies[0], p = e.props;
+    const qy = new CANNON.Quaternion().setFromAxisAngle(V3(0, 1, 0), p.yaw || 0);
+    const qz = new CANNON.Quaternion().setFromAxisAngle(V3(0, 0, 1), (p.tilt || 0) * DEG);
+    qy.mult(qz, b.quaternion);
+  }
+
+  _applyMassAndType(e) {
+    const p = e.props;
+    for (const b of e.bodies) {
+      const m = p.mass ?? mat(p).density * this.volume(p);
+      if (p.isStatic) {
+        b.type = CANNON.Body.STATIC; b.mass = 0;
+      } else {
+        b.type = CANNON.Body.DYNAMIC; b.mass = Math.max(0.05, m);
+      }
+      b.updateMassProperties();
+      b.velocity.setZero(); b.angularVelocity.setZero();
+      b.linearDamping = PARAMS.airResistance; b.angularDamping = 0.05;
+      b.wakeUp();
+    }
+  }
+
+  /** Re-derive friction / restitution from props + global params. */
+  refreshSurface(e) {
+    if (e.kind === 'ragdoll') { if (e.rig) applySurface(e.rig.material, e.props); return; }
+    for (const b of e.bodies) applySurface(b.material, e.props);
+  }
+
+  /** Inspector edits funnel through here so physics updates immediately. */
+  setProp(e, key, value) {
+    const p = e.props;
+    if (e.kind === 'ragdoll') {
+      if (key === 'scale') { this.rebuildRagdoll(e, value); return; }
+      if (key === 'muscle') { e.ctrl.muscle = value; return; }
+      p[key] = value; this.refreshSurface(e); return;
+    }
+    switch (key) {
+      case 'material':
+        p.material = value; p.friction = null; p.restitution = null; p.mass = null; p.color = null;
+        this.refreshSurface(e); this._applyMassAndType(e); this.renderer.refreshMaterial(e);
+        break;
+      case 'friction': case 'restitution':
+        p[key] = value; this.refreshSurface(e); for (const b of e.bodies) b.wakeUp(); break;
+      case 'mass':
+        p.mass = value; this._applyMassAndType(e); break;
+      case 'isStatic':
+        p.isStatic = value; this._applyMassAndType(e); this.physics.wakeAll(); break;
+      case 'sx': case 'sy': case 'sz': case 'radius': case 'height': {
+        if (e.kind !== 'object') return;
+        const oldHalf = this.halfHeight(p);
+        if (key === 'radius') p.radius = value; else if (key === 'height') p.height = value;
+        else p.size['xyz'.indexOf(key[1])] = value;
+        const b = e.bodies[0];
+        this._applyShape(e);
+        b.position.y += this.halfHeight(p) - oldHalf;  // keep the base where it was
+        p.mass = null;
+        this._applyMassAndType(e);
+        this.renderer.refreshGeometry(e);
+        break;
+      }
+      case 'tilt': case 'yaw':
+        p[key] = value; this._applyOrientation(e); e.bodies[0].aabbNeedsUpdate = true; this.physics.wakeAll(); break;
+    }
+  }
+
+  /* ---------- composites ---------- */
+  _spawnBridge(def, pos, yaw) {
+    const props = { name: def.label, material: def.material, isStatic: false, friction: null, restitution: null, color: null, mass: null,
+                    shape: 'box', size: [0.42, 0.08, 1.6] };
+    const e = this._newEntity('bridge', 'bridge', props);
+    const rot = new CANNON.Quaternion().setFromAxisAngle(V3(0, 1, 0), yaw);
+    const at = (x, y, z) => rot.vmult(V3(x, y, z)).vadd(V3(pos.x, pos.y, pos.z));
+    const span = def.span, deckY = 1.6, n = Math.round(span / 0.46), pw = span / n;
+    // Two posts on each side (static stone)
+    const postMat = new CANNON.Material('post');
+    applySurface(postMat, { material: 'stone' });
+    const posts = [];
+    for (const sx of [-1, 1]) {
+      const post = new CANNON.Body({ type: CANNON.Body.STATIC, material: postMat });
+      post.addShape(new CANNON.Box(V3(0.35, deckY / 2, 0.9)));
+      post.position.copy(at(sx * (span / 2 + 0.35), deckY / 2, 0));
+      post.quaternion.copy(rot);
+      post.entity = e; post.isPost = true;
+      this.physics.world.addBody(post);
+      posts.push(post);
+    }
+    const planks = [];
+    for (let i = 0; i < n; i++) {
+      const b = new CANNON.Body({ mass: 1, material: new CANNON.Material('plank'), sleepSpeedLimit: 0.15, sleepTimeLimit: 0.8 });
+      b.addShape(new CANNON.Box(V3(pw / 2 - 0.02, 0.04, 0.8)));
+      b.position.copy(at(-span / 2 + pw * (i + 0.5), deckY - 0.04, 0));
+      b.quaternion.copy(rot);
+      b.entity = e;
+      this.physics.world.addBody(b);
+      planks.push(b);
+    }
+    const link = (A, B, ax, bx) => {
+      for (const z of [-0.7, 0.7]) {
+        const c = new CANNON.PointToPointConstraint(A, V3(ax, 0, z), B, V3(bx, 0, z), 1e6);
+        this.physics.tuneConstraint(c);
+        this.physics.world.addConstraint(c);
+        e.constraints.push(c);
+      }
+    };
+    link(posts[0], planks[0], 0.35, -pw / 2);
+    for (let i = 0; i < n - 1; i++) link(planks[i], planks[i + 1], pw / 2, -pw / 2);
+    link(planks[n - 1], posts[1], pw / 2, -0.35);
+    // Post constraints are attached at the deck top: shift post pivots up.
+    for (const c of e.constraints) {
+      if (c.bodyA.isPost) c.pivotA.y = deckY / 2 - 0.04;
+      if (c.bodyB.isPost) c.pivotB.y = deckY / 2 - 0.04;
+    }
+    e.bodies.push(...planks);
+    e.posts = posts;
+    e.allBodies = [...planks, ...posts];
+    props.mass = null;
+    this.refreshSurface(e);
+    this._applyMassAndType(e);
+    this.entities.push(e);
+    this.renderer.addEntity(e);
+    return e;
+  }
+
+  _spawnDominoes(def, pos, yaw) {
+    const out = [];
+    const dir = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
+    for (let i = 0; i < def.count; i++) {
+      const p = pos.clone().addScaledVector(dir, (i - def.count / 2) * 0.55);
+      const e = this.spawn('crate', p, yaw);
+      e.defKey = 'dominoes';
+      e.props.name = 'Domino';
+      this.setProp(e, 'sx', 0.12); this.setProp(e, 'sy', 1.0); this.setProp(e, 'sz', 0.5);
+      e.props.color = ['#e8e2d0', '#d4c7a5'][i % 2];
+      this.renderer.refreshMaterial(e);
+      out.push(e);
+    }
+    return out[0];
+  }
+
+  /* ---------- ragdolls ---------- */
+  spawnRagdoll(pos, yaw = rand(-Math.PI, Math.PI), scale = 1, opts = {}) {
+    const props = {
+      name: opts.name || `Ragdoll ${++ragdollCounter}`, material: 'flesh', friction: null, restitution: null,
+      scale, shirt: opts.shirt || pick(RAGDOLL_COLORS.shirts), pants: opts.pants || pick(RAGDOLL_COLORS.pants),
+      skin: opts.skin || pick(RAGDOLL_COLORS.skins),
+    };
+    const e = this._newEntity('ragdoll', 'ragdoll', props);
+    e.spawnYaw = yaw;
+    e.rig = Ragdoll.build(this.physics, e, pos, yaw, scale);
+    e.bodies = Object.values(e.rig.parts);
+    e.constraints = e.rig.constraints;
+    e.ctrl = opts.ctrl || new CharacterController(e, this.physics);
+    e.ctrl.entity = e;
+    if (opts.mode) e.ctrl.setMode(opts.mode);
+    this._hookImpacts(e);
+    this.entities.push(e);
+    this.renderer.addEntity(e);
+    return e;
+  }
+
+  /** Hard hits to head or torso knock the character out for a moment. */
+  _hookImpacts(e) {
+    for (const name of ['head', 'torso']) {
+      e.rig.parts[name].addEventListener('collide', (ev) => {
+        if (ev.body.ragdollId === e.id || ev.body.isGround) return;
+        const v = Math.abs(ev.contact.getImpactVelocityAlongNormal());
+        const heavy = ev.body.mass === 0 || ev.body.mass > 8;
+        if (v > (name === 'head' ? 5 : 7.5) && heavy) e.ctrl.knock(clamp(v * 0.25, 1, 4));
+      });
+    }
+  }
+
+  rebuildRagdoll(e, scale) {
+    const torso = e.rig.parts.torso;
+    const ok = Number.isFinite(torso.position.x + torso.position.y + torso.position.z);
+    const pos = ok ? new THREE.Vector3(torso.position.x, Math.max(0, torso.position.y - Ragdoll.STAND_H * e.rig.scale), torso.position.z)
+                   : new THREE.Vector3(0, 1, 0);
+    const ctrl = e.ctrl, sel = this.app.interaction.selected === e;
+    this.remove(e);
+    const n = this.spawnRagdoll(pos, ctrl.heading, scale, { name: e.props.name, shirt: e.props.shirt, pants: e.props.pants,
+                                                            skin: e.props.skin, ctrl });
+    n.props.friction = e.props.friction; n.props.restitution = e.props.restitution;
+    this.refreshSurface(n);
+    if (sel) this.app.interaction.select(n);
+    this.app.ui.refreshCharacters();
+  }
+
+  remove(e) {
+    const w = this.physics.world;
+    if (this.app.interaction) this.app.interaction.onEntityRemoved(e);
+    for (const c of e.constraints) w.removeConstraint(c);
+    for (const b of e.allBodies || e.bodies) w.removeBody(b);
+    this.renderer.removeEntity(e);
+    this.entities = this.entities.filter(x => x !== e);
+    this.physics.wakeAll();
+  }
+
+  clear() { for (const e of [...this.entities]) this.remove(e); }
+
+  get ragdolls() { return this.entities.filter(e => e.kind === 'ragdoll'); }
+
+  entityOf(body) { return body && body.entity; }
+
+  /** A body left the arena or went NaN: bring it (and its ragdoll / bridge) back. */
+  recover(body, bad) {
+    const e = body.entity;
+    const A = CONFIG.ARENA - 3;
+    if (!e) return;
+    if (e.kind === 'ragdoll') {
+      const t = e.rig.parts.torso.position;
+      const target = V3(clamp(t.x, -A, A) || 0, 3, clamp(t.z, -A, A) || 0);
+      const off = target.vsub(t);
+      for (const b of e.bodies) {
+        if (bad) { this.rebuildRagdoll(e, e.rig.scale); return; }
+        b.position.vadd(off, b.position); b.velocity.setZero(); b.angularVelocity.setZero();
+      }
+      return;
+    }
+    if (e.kind === 'bridge') { this.remove(e); return; }
+    body.position.set(clamp(body.position.x, -A, A) || 0, 4, clamp(body.position.z, -A, A) || 0);
+    if (bad) body.quaternion.set(0, 0, 0, 1);
+    body.velocity.setZero(); body.angularVelocity.setZero();
+  }
+}
+
+/* =====================================================================
+ * PresetManager — physics presets (some with per-step behaviour)
+ * ===================================================================== */
+class PresetManager {
+  constructor(app) {
+    this.app = app;
+    this.active = 'realistic';
+    this.t = 0;
+    this.nextEvent = 3;
+  }
+
+  apply(name) {
+    const preset = PHYSICS_PRESETS[name];
+    if (!preset) return;
+    Object.assign(PARAMS, DEFAULT_PARAMS, preset.params);
+    this.app.physics.applyAllParams();
+    this.active = name;
+    this.t = 0;
+    this.nextEvent = 3;
+    this.app.ui.syncParams();
+  }
+
+  markCustom() {
+    this.active = 'custom';
+    this.app.ui.syncPresetSelect();
+  }
+
+  tick(dt) {
+    const p = PHYSICS_PRESETS[this.active];
+    if (p && p.tick) p.tick(this, dt);
+  }
+}
+
+/* =====================================================================
+ * ToolManager — active tool, spawn placement, explosions, wind
+ * ===================================================================== */
+const TOOLS = {
+  grab:    { label: 'Grab',    icon: '✋', key: '1',
+             hint: 'Drag to move · release while moving to throw · wheel pushes/pulls · click to select · Q/E rotates · static objects slide on the ground' },
+  delete:  { label: 'Delete',  icon: '✖', key: '2', hint: 'Click an object or ragdoll to delete it' },
+  explode: { label: 'Explode', icon: '💥', key: '3', hint: 'Click anywhere to detonate · set radius and strength under Environment' },
+  goto:    { label: 'Go to',   icon: '🎯', key: '4', hint: 'Click the ground: the selected character (or all, if none selected) walks there' },
+};
+
+class ToolManager {
+  constructor(app) {
+    this.app = app;
+    this.tool = 'grab';
+    this.spawnType = null;
+    this.spawnYaw = 0;
+    this.explosion = { radius: 5, strength: 18 };
+    this.wind = { strength: 0, last: 14, dir: 90, gusts: true };
+  }
+
+  setTool(t) {
+    if (!TOOLS[t]) return;
+    this.cancelSpawn();
+    this.tool = t;
+    this.app.ui.syncTools();
+  }
+
+  beginSpawn(type) {
+    this.spawnType = type;
+    this.spawnYaw = 0;
+    this.app.renderer.setGhost(type);
+    this.app.ui.syncTools();
+  }
+
+  cancelSpawn() {
+    if (!this.spawnType) return;
+    this.spawnType = null;
+    this.app.renderer.setGhost(null);
+    this.app.ui.syncTools();
+  }
+
+  placeSpawn(point, keep) {
+    const type = this.spawnType;
+    if (type === 'ragdoll') this.app.objects.spawnRagdoll(point, this.spawnYaw || rand(-Math.PI, Math.PI));
+    else this.app.objects.spawn(type, point, this.spawnYaw);
+    this.app.ui.refreshCharacters();
+    if (!keep) this.cancelSpawn();
+  }
+
+  toggleWind() {
+    const w = this.wind;
+    if (w.strength > 0) { w.last = w.strength; w.strength = 0; } else w.strength = w.last || 14;
+    this.app.ui.syncWind();
+  }
+
+  /** Impulse explosion at `c` (THREE.Vector3). Strength = velocity change (m/s) for light bodies. */
+  explode(c, radius = this.explosion.radius, strength = this.explosion.strength) {
+    const knocked = new Set();
+    const tmp = new CANNON.Vec3();
+    for (const b of this.app.physics.world.bodies) {
+      if (b.type !== CANNON.Body.DYNAMIC || b.isMouse) continue;
+      const dx = b.position.x - c.x, dy = b.position.y - c.y, dz = b.position.z - c.z;
+      const d = Math.hypot(dx, dy, dz);
+      if (d > radius) continue;
+      const fall = 1 - d / radius;
+      const inv = 1 / Math.max(d, 0.05);
+      tmp.set(dx * inv, dy * inv + 0.35, dz * inv);
+      tmp.normalize();
+      const heavy = Math.sqrt(25 / Math.max(25, b.mass));
+      const dv = strength * fall * heavy;
+      b.velocity.vadd(tmp.scale(dv, tmp), b.velocity);
+      b.angularVelocity.vadd(V3(rand(-1, 1), rand(-1, 1), rand(-1, 1)).scale(dv * 0.6), b.angularVelocity);
+      b.wakeUp();
+      if (b.ragdollId) knocked.add(b.entity);
+    }
+    for (const e of knocked) if (e.ctrl) e.ctrl.knock(2.5 + strength / 15);
+    this.app.renderer.addExplosion(c, radius);
+  }
+
+  /** Per-step wind: quadratic drag toward the wind velocity on every dynamic body. */
+  applyWind(dt) {
+    const w = this.wind;
+    if (w.strength <= 0) return;
+    const t = this.app.physics.simTime;
+    const gust = w.gusts ? 0.65 + 0.35 * Math.sin(t * 1.3) * Math.sin(t * 0.47 + 1) + 0.25 * Math.sin(t * 3.1) : 1;
+    const a = w.dir * DEG, wx = Math.sin(a), wz = Math.cos(a);
+    const vw = w.strength * gust;
+    this.gustNow = gust;
+    for (const b of this.app.physics.world.bodies) {
+      if (b.type !== CANNON.Body.DYNAMIC || b.isMouse) continue;
+      if (b._area === undefined) {
+        b.updateAABB();
+        const ab = b.aabb, sx = ab.upperBound.x - ab.lowerBound.x, sy = ab.upperBound.y - ab.lowerBound.y, sz = ab.upperBound.z - ab.lowerBound.z;
+        b._area = clamp(Math.sqrt(sx * sy * sz) ** (4 / 3), 0.01, 20);
+      }
+      const rel = vw - (b.velocity.x * wx + b.velocity.z * wz);
+      const F = 0.6 * b._area * rel * Math.abs(rel);
+      if (b.sleepState && Math.abs(F) > b.mass * 0.5) b.wakeUp();
+      b.force.x += wx * F; b.force.z += wz * F;
+    }
+  }
+}
+
+/* =====================================================================
+ * InteractionManager — picking, grabbing, throwing, selection
+ * ===================================================================== */
+class InteractionManager {
+  constructor(app) {
+    this.app = app;
+    this.canvas = app.renderer.canvas;
+    this.raycaster = new THREE.Raycaster();
+    this.ndc = new THREE.Vector2();
+    this.pointer = { x: 0, y: 0, inside: false };
+    this.selected = null;
+    this.hover = null;
+    this.drag = null;
+    this.groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+
+    // Kinematic body the grab constraint pulls toward.
+    this.mouseBody = new CANNON.Body({ type: CANNON.Body.KINEMATIC, collisionFilterGroup: 0, collisionFilterMask: 0 });
+    this.mouseBody.isMouse = true;
+    app.physics.world.addBody(this.mouseBody);
+    app.physics.on('prestep', () => this._stepDrag());
+
+    const c = this.canvas;
+    c.addEventListener('pointerdown', (e) => this._down(e));
+    window.addEventListener('pointermove', (e) => this._move(e));
+    window.addEventListener('pointerup', (e) => this._up(e));
+    c.addEventListener('wheel', (e) => this._wheel(e), { passive: false });
+    c.addEventListener('contextmenu', (e) => e.preventDefault());
+    c.addEventListener('pointerleave', () => { this.pointer.inside = false; });
+  }
+
+  _setNdc(e) {
+    const r = this.canvas.getBoundingClientRect();
+    this.pointer.x = e.clientX; this.pointer.y = e.clientY;
+    this.pointer.inside = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+    this.ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    this.raycaster.setFromCamera(this.ndc, this.app.renderer.camera);
+  }
+
+  /** Nearest entity mesh under the pointer: { entity, body, point, normal } or null. */
+  pick() {
+    const hits = this.raycaster.intersectObjects(this.app.renderer.pickables, false);
+    for (const h of hits) {
+      const ud = h.object.userData;
+      if (!ud.entity) continue;
+      const normal = h.face ? h.face.normal.clone().transformDirection(h.object.matrixWorld) : new THREE.Vector3(0, 1, 0);
+      return { entity: ud.entity, body: ud.body, point: h.point, normal };
+    }
+    return null;
+  }
+
+  /** Where a spawn / target lands: top of whatever is under the cursor, or the ground. */
+  surfacePoint() {
+    const hit = this.pick();
+    if (hit && hit.normal.y > 0.5) return hit.point.clone();
+    const p = new THREE.Vector3();
+    if (this.raycaster.ray.intersectPlane(this.groundPlane, p)) {
+      const A = CONFIG.ARENA - 0.5;
+      p.x = clamp(p.x, -A, A); p.z = clamp(p.z, -A, A);
+      return p;
+    }
+    return null;
+  }
+
+  _down(e) {
+    if (e.button !== 0) return;
+    this._setNdc(e);
+    const tools = this.app.tools;
+    if (tools.spawnType) {
+      const p = this.surfacePoint();
+      if (p) tools.placeSpawn(p, e.shiftKey);
+      return;
+    }
+    const hit = this.pick();
+    switch (tools.tool) {
+      case 'grab': {
+        if (!hit) { this.select(null); return; }
+        this.select(hit.entity);
+        this._startDrag(hit);
+        break;
+      }
+      case 'delete':
+        if (hit) { this.app.objects.remove(hit.entity); this.app.ui.refreshCharacters(); }
+        break;
+      case 'explode': {
+        const p = hit ? hit.point : this.surfacePoint();
+        if (p) tools.explode(p);
+        break;
+      }
+      case 'goto': {
+        if (hit && hit.entity.kind === 'ragdoll') { this.select(hit.entity); return; }
+        const p = this.surfacePoint();
+        if (!p) return;
+        const list = this.selected && this.selected.kind === 'ragdoll' ? [this.selected] : this.app.objects.ragdolls;
+        for (const r of list) {
+          r.ctrl.target = p.clone();
+          if (r.ctrl.mode !== 'run') r.ctrl.mode = 'walk';
+          r.ctrl.stun = 0;
+        }
+        this.app.renderer.setTargetMarker(p);
+        this.app.ui.refreshCharacters();
+        break;
+      }
+    }
+  }
+
+  _startDrag(hit) {
+    const e = hit.entity, body = hit.body;
+    const cam = this.app.renderer.camera;
+    const r = this.app.renderer;
+    if (body.type === CANNON.Body.STATIC) {
+      if (body.isPost) return;
+      // Static objects slide on a horizontal plane (building / arranging).
+      const off = new THREE.Vector3(body.position.x - hit.point.x, 0, body.position.z - hit.point.z);
+      this.drag = { kind: 'static', entity: e, body, plane: new THREE.Plane(new THREE.Vector3(0, 1, 0), -hit.point.y), off };
+    } else {
+      const local = body.pointToLocalFrame(V3(hit.point.x, hit.point.y, hit.point.z));
+      const mass = e.kind === 'ragdoll' ? e.rig.totalMass : e.kind === 'bridge' ? 40 : body.mass;
+      const c = new CANNON.PointToPointConstraint(body, local, this.mouseBody, V3(0, 0, 0), mass * 120 + 200);
+      c.isMouse = true;
+      body.wakeUp();
+      this.mouseBody.position.set(hit.point.x, hit.point.y, hit.point.z);
+      this.mouseBody.velocity.setZero();
+      this.app.physics.world.addConstraint(c);
+      const camDir = new THREE.Vector3(); cam.getWorldDirection(camDir);
+      const dist = hit.point.clone().sub(cam.position).dot(camDir);
+      this.drag = { kind: 'dynamic', entity: e, body, c, dist, target: hit.point.clone(), prevDamp: body.angularDamping };
+      body.angularDamping = 0.6;
+      if (e.ctrl) e.ctrl.grabbed = true;
+    }
+    r.controls.enableZoom = false;
+    this.canvas.classList.add('dragging');
+  }
+
+  _endDrag() {
+    const d = this.drag;
+    if (!d) return;
+    if (d.kind === 'dynamic') {
+      this.app.physics.world.removeConstraint(d.c);
+      d.body.angularDamping = d.prevDamp;
+      if (d.entity.ctrl) { d.entity.ctrl.grabbed = false; d.entity.ctrl.knock(0.8); }
+    }
+    this.drag = null;
+    this.app.renderer.controls.enableZoom = true;
+    this.canvas.classList.remove('dragging');
+  }
+
+  /** Pointer target on the camera-facing plane at the grab depth. */
+  _dragTarget() {
+    const d = this.drag, cam = this.app.renderer.camera;
+    const dir = this.raycaster.ray.direction, camDir = new THREE.Vector3();
+    cam.getWorldDirection(camDir);
+    const t = d.dist / Math.max(0.05, dir.dot(camDir));
+    const p = this.raycaster.ray.origin.clone().addScaledVector(dir, t);
+    const A = CONFIG.ARENA - 0.3;
+    p.x = clamp(p.x, -A, A); p.z = clamp(p.z, -A, A); p.y = clamp(p.y, 0.05, CONFIG.CEILING - 1);
+    return p;
+  }
+
+  _stepDrag() {
+    const d = this.drag;
+    if (!d || d.kind !== 'dynamic') return;
+    const mb = this.mouseBody, h = CONFIG.STEP;
+    // Move the anchor at a bounded speed so constraints never get a huge jump.
+    const dx = d.target.x - mb.position.x, dy = d.target.y - mb.position.y, dz = d.target.z - mb.position.z;
+    const dist = Math.hypot(dx, dy, dz), maxStep = 45 * h;
+    const k = dist > maxStep ? maxStep / dist : 1;
+    mb.velocity.set(dx * k / h, dy * k / h, dz * k / h);
+  }
+
+  _move(e) {
+    this._setNdc(e);
+    const d = this.drag;
+    if (d) {
+      if (d.kind === 'dynamic') d.target.copy(this._dragTarget());
+      else {
+        const p = new THREE.Vector3();
+        if (this.raycaster.ray.intersectPlane(d.plane, p)) {
+          const A = CONFIG.ARENA - 0.5;
+          d.body.position.x = clamp(p.x + d.off.x, -A, A);
+          d.body.position.z = clamp(p.z + d.off.z, -A, A);
+          d.body.aabbNeedsUpdate = true;
+          this.app.physics.wakeAll();
+        }
+      }
+    }
+  }
+
+  _up(e) {
+    if (e.button === 0) this._endDrag();
+  }
+
+  _wheel(e) {
+    if (this.drag && this.drag.kind === 'dynamic') {
+      e.preventDefault();
+      this.drag.dist = clamp(this.drag.dist * (e.deltaY > 0 ? 0.92 : 1.08), 1, 80);
+      this.drag.target.copy(this._dragTarget());
+    } else if (this.app.tools.spawnType && e.shiftKey) {
+      e.preventDefault();
+      this.rotate(e.deltaY > 0 ? 1 : -1);
+    }
+  }
+
+  /** Q/E: rotate spawn ghost or selected object about the vertical axis. */
+  rotate(dir) {
+    const step = 15 * DEG * dir;
+    const tools = this.app.tools;
+    if (tools.spawnType) { tools.spawnYaw += step; return; }
+    const s = this.selected;
+    if (!s) return;
+    if (s.kind === 'object') { this.app.objects.setProp(s, 'yaw', normAngle((s.props.yaw || 0) + step)); this.app.ui.renderInspector(); }
+    else if (s.kind === 'ragdoll') { s.ctrl.heading = normAngle(s.ctrl.heading + step); s.ctrl.target = null; }
+  }
+
+  select(e) {
+    this.selected = e;
+    this.app.renderer.setSelected(e);
+    this.app.ui.renderInspector();
+    this.app.ui.refreshCharacters();
+  }
+
+  onEntityRemoved(e) {
+    if (this.drag && this.drag.entity === e) this._endDrag();
+    if (this.selected === e) this.select(null);
+    if (this.hover === e) this.hover = null;
+  }
+
+  updateHover() {
+    if (!this.pointer.inside || this.drag) { this.hover = null; return; }
+    const hit = this.app.tools.spawnType ? null : this.pick();
+    this.hover = hit ? hit.entity : null;
+    if (this.app.tools.spawnType) {
+      const p = this.surfacePoint();
+      this.app.renderer.updateGhost(p, this.app.tools.spawnYaw);
+    }
+  }
+}
+
+/* =====================================================================
+ * Renderer — three.js scene, meshes synced from cannon bodies
+ * ===================================================================== */
+class Renderer {
+  constructor(app, canvas) {
+    this.app = app;
+    this.canvas = canvas;
+    const r = (this.gl = new THREE.WebGLRenderer({ canvas, antialias: true }));
+    r.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    r.shadowMap.enabled = true;
+    r.shadowMap.type = THREE.PCFSoftShadowMap;
+    r.outputColorSpace = THREE.SRGBColorSpace;
+    r.toneMapping = THREE.ACESFilmicToneMapping;
+
+    const scene = (this.scene = new THREE.Scene());
+    scene.background = new THREE.Color('#12151b');
+    scene.fog = new THREE.Fog('#12151b', 45, 110);
+
+    const cam = (this.camera = new THREE.PerspectiveCamera(50, 1, 0.1, 300));
+    this.controls = new OrbitControls(cam, canvas);
+    const c = this.controls;
+    c.mouseButtons = { LEFT: null, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.ROTATE };
+    c.enableDamping = true; c.dampingFactor = 0.1;
+    c.maxPolarAngle = Math.PI * 0.495; c.minDistance = 2; c.maxDistance = 90;
+    c.keyPanSpeed = 25;
+    c.listenToKeyEvents(window);
+    this.resetCamera();
+
+    scene.add(new THREE.HemisphereLight('#bcd3ff', '#2a2520', 0.9));
+    const sun = (this.sun = new THREE.DirectionalLight('#fff4e0', 2.2));
+    sun.position.set(14, 26, 10);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(2048, 2048);
+    const sc = sun.shadow.camera; sc.left = -30; sc.right = 30; sc.top = 30; sc.bottom = -30; sc.near = 1; sc.far = 80;
+    sun.shadow.bias = -0.0004;
+    scene.add(sun);
+
+    // Ground with a checker texture + arena border
+    const A = CONFIG.ARENA;
+    const tex = this._checkerTexture();
+    tex.repeat.set(A, A);
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(A * 2, A * 2),
+      new THREE.MeshStandardMaterial({ map: tex, roughness: 0.95 }));
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    scene.add(ground);
+    const outer = new THREE.Mesh(new THREE.PlaneGeometry(300, 300), new THREE.MeshStandardMaterial({ color: '#0d0f13', roughness: 1 }));
+    outer.rotation.x = -Math.PI / 2; outer.position.y = -0.02;
+    scene.add(outer);
+    const curbMat = new THREE.MeshStandardMaterial({ color: '#2f6fd1', emissive: '#1c3f7a', emissiveIntensity: 0.6 });
+    for (const [x, z, w, d] of [[A, 0, 0.15, A * 2], [-A, 0, 0.15, A * 2], [0, A, A * 2, 0.15], [0, -A, A * 2, 0.15]]) {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w, 0.12, d), curbMat);
+      m.position.set(x, 0.06, z);
+      scene.add(m);
+    }
+
+    this.views = new Map();         // entity → { meshes: [{mesh, body}] }
+    this.pickables = [];
+    this.effects = [];
+    this.ghost = null;
+    this.selected = null;
+
+    // Drag line
+    this.dragLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]),
+      new THREE.LineBasicMaterial({ color: '#4f9dff' }));
+    this.dragLine.visible = false;
+    scene.add(this.dragLine);
+    // Go-to marker
+    this.marker = new THREE.Mesh(new THREE.RingGeometry(0.35, 0.5, 32), new THREE.MeshBasicMaterial({ color: '#4f9dff', transparent: true, opacity: 0.8, side: THREE.DoubleSide }));
+    this.marker.rotation.x = -Math.PI / 2; this.marker.visible = false;
+    scene.add(this.marker);
+    // Wind particles
+    const N = 500, pos = new Float32Array(N * 3);
+    for (let i = 0; i < N; i++) { pos[i * 3] = rand(-A, A); pos[i * 3 + 1] = rand(0.2, 8); pos[i * 3 + 2] = rand(-A, A); }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    this.windPts = new THREE.Points(g, new THREE.PointsMaterial({ color: '#9fc6ff', size: 0.08, transparent: true, opacity: 0.5 }));
+    this.windPts.visible = false;
+    scene.add(this.windPts);
+
+    this.geo = {
+      box: new THREE.BoxGeometry(1, 1, 1),
+      sphere: new THREE.SphereGeometry(1, 24, 16),
+      cylinder: new THREE.CylinderGeometry(1, 1, 1, 20),
+    };
+  }
+
+  _checkerTexture() {
+    const cv = document.createElement('canvas'); cv.width = cv.height = 128;
+    const g = cv.getContext('2d');
+    g.fillStyle = '#232833'; g.fillRect(0, 0, 128, 128);
+    g.fillStyle = '#1d212a'; g.fillRect(0, 0, 64, 64); g.fillRect(64, 64, 64, 64);
+    g.strokeStyle = '#2c3240'; g.lineWidth = 2; g.strokeRect(0, 0, 128, 128);
+    const t = new THREE.CanvasTexture(cv);
+    t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace;
+    t.anisotropy = 8;
+    return t;
+  }
+
+  resetCamera() {
+    this.camera.position.set(0, 9, 17);
+    this.controls.target.set(0, 1, 0);
+    this.controls.update();
+  }
+
+  resize(w, h) {
+    this.gl.setSize(w, h, false);
+    this.camera.aspect = w / Math.max(1, h);
+    this.camera.updateProjectionMatrix();
+  }
+
+  _stdMat(color, m) {
+    return new THREE.MeshStandardMaterial({ color, roughness: m ? m.rough : 0.8, metalness: m ? m.metal : 0 });
+  }
+
+  /** Builds three.js meshes for an entity, one per body (two for posts etc.). */
+  addEntity(e) {
+    const meshes = [];
+    const add = (mesh, body, pick = true) => {
+      mesh.castShadow = true; mesh.receiveShadow = true;
+      mesh.userData = { entity: e, body };
+      this.scene.add(mesh);
+      if (pick) this.pickables.push(mesh);
+      meshes.push({ mesh, body });
+      return mesh;
+    };
+    if (e.kind === 'ragdoll') {
+      const P = e.rig.parts, s = e.rig.scale, cols = { shirt: e.props.shirt, pants: e.props.pants, skin: e.props.skin };
+      for (const [name, d] of Object.entries(RAG_PARTS)) {
+        const material = this._stdMat(cols[d.color]);
+        let mesh;
+        if (d.radius) {
+          mesh = new THREE.Mesh(new THREE.SphereGeometry(d.radius * s, 20, 14), material);
+          // Eyes show which way the character faces.
+          const eyeMat = new THREE.MeshBasicMaterial({ color: '#111' });
+          for (const x of [-0.045, 0.045]) {
+            const eye = new THREE.Mesh(new THREE.SphereGeometry(0.018 * s, 8, 6), eyeMat);
+            eye.position.set(x * s, 0.02 * s, 0.105 * s);
+            mesh.add(eye);
+          }
+        } else if (name === 'torso') {
+          mesh = new THREE.Mesh(new THREE.BoxGeometry(d.half[0] * 2 * s, d.half[1] * 2 * s, d.half[2] * 2 * s), material);
+          const belt = new THREE.Mesh(new THREE.BoxGeometry(d.half[0] * 2.04 * s, 0.1 * s, d.half[2] * 2.08 * s), this._stdMat(cols.pants));
+          belt.position.y = -d.half[1] * s + 0.05 * s;
+          mesh.add(belt);
+        } else {
+          const r = Math.max(d.half[0], d.half[2]) * s;
+          mesh = new THREE.Mesh(new THREE.CapsuleGeometry(r, Math.max(0.01, d.half[1] * 2 * s - r * 2), 4, 10), material);
+          if (d.foot) {
+            const foot = new THREE.Mesh(new THREE.BoxGeometry(0.13 * s, 0.06 * s, 0.24 * s), this._stdMat('#222'));
+            foot.position.set(0, -0.24 * s, 0.05 * s);
+            foot.castShadow = true;
+            mesh.add(foot);
+          }
+        }
+        add(mesh, P[name]);
+      }
+    } else if (e.kind === 'bridge') {
+      const m = MATERIALS[e.props.material];
+      for (const b of e.bodies) {
+        const he = b.shapes[0].halfExtents;
+        add(new THREE.Mesh(new THREE.BoxGeometry(he.x * 2, he.y * 2, he.z * 2), this._stdMat(e.props.color || m.color, m)), b);
+      }
+      for (const post of e.posts) {
+        const he = post.shapes[0].halfExtents;
+        add(new THREE.Mesh(new THREE.BoxGeometry(he.x * 2, he.y * 2, he.z * 2), this._stdMat('#5d5850', MATERIALS.stone)), post);
+      }
+      // Rope lines between planks
+      const ropeMat = new THREE.LineBasicMaterial({ color: '#c9b48a' });
+      e.ropes = [-0.7, 0.7].map(() => {
+        const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(new Array(e.bodies.length + 2).fill(0).map(() => new THREE.Vector3())), ropeMat);
+        this.scene.add(line); return line;
+      });
+    } else {
+      const m = mat(e.props);
+      const mesh = new THREE.Mesh(this.geo[e.props.shape], this._stdMat(e.props.color || m.color, m));
+      add(mesh, e.bodies[0]);
+      this._scaleMesh(e, mesh);
+    }
+    this.views.set(e, { meshes });
+  }
+
+  _scaleMesh(e, mesh) {
+    const p = e.props;
+    if (p.shape === 'sphere') mesh.scale.setScalar(p.radius);
+    else if (p.shape === 'cylinder') mesh.scale.set(p.radius, p.height, p.radius);
+    else mesh.scale.set(p.size[0], p.size[1], p.size[2]);
+  }
+
+  refreshGeometry(e) {
+    const v = this.views.get(e); if (!v) return;
+    if (e.kind === 'object') this._scaleMesh(e, v.meshes[0].mesh);
+  }
+
+  refreshMaterial(e) {
+    const v = this.views.get(e); if (!v || e.kind === 'ragdoll') return;
+    const m = mat(e.props);
+    for (const { mesh, body } of v.meshes) {
+      if (body.isPost) continue;
+      mesh.material.color.set(e.props.color || m.color);
+      mesh.material.roughness = m.rough; mesh.material.metalness = m.metal;
+    }
+  }
+
+  removeEntity(e) {
+    const v = this.views.get(e); if (!v) return;
+    for (const { mesh } of v.meshes) {
+      this.scene.remove(mesh);
+      mesh.traverse(o => { if (o.material && o.material.dispose) o.material.dispose(); if (o.geometry && !Object.values(this.geo).includes(o.geometry)) o.geometry.dispose(); });
+    }
+    if (e.ropes) for (const r of e.ropes) { this.scene.remove(r); r.geometry.dispose(); }
+    const set = new Set(v.meshes.map(m => m.mesh));
+    this.pickables = this.pickables.filter(m => !set.has(m));
+    this.views.delete(e);
+  }
+
+  setSelected(e) { this.selected = e; }
+
+  setGhost(type) {
+    if (this.ghost) { this.scene.remove(this.ghost); this.ghost.traverse(o => o.material && o.material.dispose()); this.ghost = null; }
+    if (!type) return;
+    const gm = new THREE.MeshBasicMaterial({ color: '#4f9dff', transparent: true, opacity: 0.35, depthWrite: false });
+    const grp = new THREE.Group();
+    if (type === 'ragdoll') {
+      const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.22, 1.2, 4, 10), gm);
+      body.position.y = 0.82; grp.add(body);
+      const nose = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.3), gm);
+      nose.position.set(0, 1.6, 0.25); grp.add(nose);
+    } else {
+      const d = OBJECT_DEFS[type];
+      if (d.build === 'bridge') {
+        const m = new THREE.Mesh(new THREE.BoxGeometry(d.span + 1.4, 0.15, 1.8), gm); m.position.y = 1.55; grp.add(m);
+        for (const sx of [-1, 1]) { const p = new THREE.Mesh(new THREE.BoxGeometry(0.7, 1.6, 1.8), gm); p.position.set(sx * (d.span / 2 + 0.35), 0.8, 0); grp.add(p); }
+      } else if (d.build === 'dominoes') {
+        const m = new THREE.Mesh(new THREE.BoxGeometry(d.count * 0.55, 1, 0.5), gm); m.position.y = 0.5; grp.add(m);
+      } else {
+        const p = { shape: d.shape, size: d.size, radius: d.radius, height: d.height, tilt: d.tilt || 0 };
+        const m = new THREE.Mesh(this.geo[d.shape], gm);
+        this._scaleMesh({ props: p }, m);
+        m.rotation.z = (d.tilt || 0) * DEG;
+        m.position.y = this.app.objects.halfHeight(p) + (d.elevate || 0);
+        grp.add(m);
+      }
+    }
+    grp.visible = false;
+    this.ghost = grp;
+    this.scene.add(grp);
+  }
+
+  updateGhost(p, yaw) {
+    if (!this.ghost) return;
+    this.ghost.visible = !!p;
+    if (p) { this.ghost.position.copy(p); this.ghost.rotation.y = yaw; }
+  }
+
+  setTargetMarker(p) {
+    this.marker.position.set(p.x, p.y + 0.03, p.z);
+    this.marker.visible = true;
+    this.markerT = 1.5;
+  }
+
+  addExplosion(c, radius) {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 16),
+      new THREE.MeshBasicMaterial({ color: '#ffb347', transparent: true, opacity: 0.6, depthWrite: false }));
+    m.position.copy(c);
+    const light = new THREE.PointLight('#ffa040', 60, radius * 3);
+    light.position.copy(c);
+    this.scene.add(m, light);
+    this.effects.push({ mesh: m, light, t: 0, life: 0.45, radius });
+  }
+
+  /** Copy body transforms into meshes and update effects. dt = real seconds. */
+  render(dt) {
+    const sel = this.selected, hover = this.app.interaction.hover;
+    for (const [e, v] of this.views) {
+      const emissive = e === sel ? 0x1d4e9a : e === hover ? 0x2a2f3a : 0x000000;
+      for (const { mesh, body } of v.meshes) {
+        mesh.position.set(body.position.x, body.position.y, body.position.z);
+        mesh.quaternion.set(body.quaternion.x, body.quaternion.y, body.quaternion.z, body.quaternion.w);
+        if (mesh.material.emissive && mesh.material.emissive.getHex() !== emissive) mesh.material.emissive.setHex(emissive);
+      }
+      if (e.ropes) {
+        e.ropes.forEach((line, i) => {
+          const z = i ? 0.7 : -0.7, pts = line.geometry.attributes.position;
+          const all = [e.posts[0], ...e.bodies, e.posts[1]];
+          all.forEach((b, k) => {
+            let lx = 0, ly = 0.04;
+            if (b.isPost) { lx = k === 0 ? 0.35 : -0.35; ly = b.shapes[0].halfExtents.y - 0.04; }
+            const w = b.pointToWorldFrame(V3(lx, ly, z));
+            pts.setXYZ(k, w.x, w.y, w.z);
+          });
+          pts.needsUpdate = true;
+        });
+      }
+    }
+
+    // Drag line
+    const d = this.app.interaction.drag;
+    if (d && d.kind === 'dynamic') {
+      const a = d.body.pointToWorldFrame(d.c.pivotA), b = this.app.interaction.mouseBody.position;
+      const pts = this.dragLine.geometry.attributes.position;
+      pts.setXYZ(0, a.x, a.y, a.z); pts.setXYZ(1, b.x, b.y, b.z); pts.needsUpdate = true;
+      this.dragLine.geometry.computeBoundingSphere();
+      this.dragLine.visible = true;
+    } else this.dragLine.visible = false;
+
+    // Effects
+    for (const fx of this.effects) {
+      fx.t += dt;
+      const k = fx.t / fx.life;
+      fx.mesh.scale.setScalar(fx.radius * (0.2 + 0.8 * Math.sqrt(k)));
+      fx.mesh.material.opacity = 0.6 * (1 - k);
+      fx.light.intensity = 60 * (1 - k);
+    }
+    this.effects = this.effects.filter(fx => {
+      if (fx.t < fx.life) return true;
+      this.scene.remove(fx.mesh, fx.light); fx.mesh.geometry.dispose(); fx.mesh.material.dispose(); fx.light.dispose();
+      return false;
+    });
+    if (this.marker.visible) {
+      this.markerT -= dt;
+      this.marker.material.opacity = clamp(this.markerT, 0, 0.8);
+      if (this.markerT <= 0) this.marker.visible = false;
+    }
+
+    // Wind particles drift with the wind
+    const wind = this.app.tools.wind;
+    this.windPts.visible = wind.strength > 0;
+    if (this.windPts.visible && !this.app.physics.paused) {
+      const a = wind.dir * DEG, vx = Math.sin(a), vz = Math.cos(a), sp = wind.strength * (this.app.tools.gustNow || 1) * dt * PARAMS.timeScale;
+      const pos = this.windPts.geometry.attributes.position, A = CONFIG.ARENA;
+      for (let i = 0; i < pos.count; i++) {
+        let x = pos.getX(i) + vx * sp, z = pos.getZ(i) + vz * sp;
+        if (x > A) x -= 2 * A; if (x < -A) x += 2 * A; if (z > A) z -= 2 * A; if (z < -A) z += 2 * A;
+        pos.setX(i, x); pos.setZ(i, z);
+      }
+      pos.needsUpdate = true;
+    }
+
+    // Follow cam
+    if (this.app.ui.follow && sel && sel.kind === 'ragdoll') {
+      const t = sel.rig.parts.torso.position;
+      const goal = new THREE.Vector3(t.x, t.y, t.z);
+      const delta = goal.sub(this.controls.target).multiplyScalar(Math.min(1, dt * 4));
+      this.controls.target.add(delta);
+      this.camera.position.add(delta);
+    }
+    this.controls.update();
+    this.gl.render(this.scene, this.camera);
+  }
+
+  focus(e) {
+    if (!e) return;
+    const b = e.kind === 'ragdoll' ? e.rig.parts.torso : e.bodies[0];
+    const goal = new THREE.Vector3(b.position.x, b.position.y, b.position.z);
+    const off = this.camera.position.clone().sub(this.controls.target).setLength(8);
+    this.controls.target.copy(goal);
+    this.camera.position.copy(goal).add(off);
+  }
+}
+
+/* =====================================================================
+ * UIManager — sidebars, toolbar, inspector
+ * ===================================================================== */
+class UIManager {
+  constructor(app) {
+    this.app = app;
+    this.$ = (id) => document.getElementById(id);
+    this.follow = false;
+    this._build();
+  }
+
+  _slider(parent, { label, min, max, step, value, fmt, onInput, onChange, id }) {
+    const row = document.createElement('div');
+    row.className = 'row';
+    const lab = document.createElement('label'); lab.textContent = label;
+    const out = document.createElement('output'); out.textContent = fmt(value);
+    const inp = document.createElement('input');
+    Object.assign(inp, { type: 'range', min, max, step, value });
+    if (id) inp.id = id;
+    inp.addEventListener('input', () => { const v = parseFloat(inp.value); out.textContent = fmt(v); onInput && onInput(v); });
+    if (onChange) inp.addEventListener('change', () => onChange(parseFloat(inp.value)));
+    row.append(lab, out, inp);
+    parent.appendChild(row);
+    return { row, inp, out, set: (v) => { inp.value = v; out.textContent = fmt(v); } };
+  }
+
+  _build() {
+    const app = this.app, $ = this.$;
+
+    // Toolbar
+    $('btn-play').onclick = () => this.togglePause();
+    $('btn-step').onclick = () => { if (app.physics.paused) { for (let i = 0; i < 2; i++) app.physics.step(); } };
+    $('btn-reset').onclick = () => app.resetScene();
+    $('btn-wind').onclick = () => app.tools.toggleWind();
+    const tg = $('tool-group');
+    this.toolBtns = {};
+    for (const [k, t] of Object.entries(TOOLS)) {
+      const b = document.createElement('button');
+      b.className = 'btn'; b.innerHTML = `${t.icon} <span class="lbl">${t.label}</span>`;
+      b.title = `${t.label} (${t.key})`;
+      b.onclick = () => app.tools.setTool(k);
+      tg.appendChild(b);
+      this.toolBtns[k] = b;
+    }
+    const sel = $('sel-preset');
+    for (const [k, p] of Object.entries(PHYSICS_PRESETS)) sel.add(new Option(p.label, k));
+    sel.add(new Option('Custom', 'custom'));
+    sel.onchange = () => { if (sel.value !== 'custom') app.presets.apply(sel.value); };
+    $('btn-left').onclick = () => { $('left').classList.toggle('open'); $('right').classList.remove('open'); };
+    $('btn-right').onclick = () => { $('right').classList.toggle('open'); $('left').classList.remove('open'); };
+
+    // Spawn list
+    const sl = $('spawn-list');
+    this.spawnBtns = {};
+    for (const [k, d] of Object.entries(OBJECT_DEFS)) {
+      const b = document.createElement('button');
+      b.className = 'btn'; b.textContent = `${d.icon} ${d.label}`; b.title = `Place ${d.label} (shift-click to place several)`;
+      b.onclick = () => app.tools.spawnType === k ? app.tools.cancelSpawn() : app.tools.beginSpawn(k);
+      sl.appendChild(b);
+      this.spawnBtns[k] = b;
+    }
+    $('btn-clear').onclick = () => { app.objects.clear(); this.refreshCharacters(); };
+    $('btn-spawn-ragdoll').onclick = () => app.tools.spawnType === 'ragdoll' ? app.tools.cancelSpawn() : app.tools.beginSpawn('ragdoll');
+    const am = $('sel-all-mode');
+    am.add(new Option('—', ''));
+    for (const [k, s] of Object.entries(CHARACTER_STATES)) am.add(new Option(s.label, k));
+    am.onchange = () => {
+      if (!am.value) return;
+      for (const r of app.objects.ragdolls) r.ctrl.setMode(am.value);
+      am.value = '';
+      this.refreshCharacters();
+    };
+
+    // Environment
+    const env = $('env-controls');
+    const w = app.tools.wind;
+    this.windSlider = this._slider(env, { label: 'Wind speed', min: 0, max: 40, step: 0.5, value: w.strength,
+      fmt: v => v.toFixed(1) + ' m/s', onInput: v => { w.strength = v; if (v > 0) w.last = v; this.syncWindBtn(); } });
+    this._slider(env, { label: 'Wind direction', min: -180, max: 180, step: 1, value: w.dir,
+      fmt: v => Math.round(v) + '°', onInput: v => { w.dir = v; } });
+    const gl = document.createElement('label'); gl.className = 'check';
+    gl.innerHTML = '<input type="checkbox" checked> Gusts';
+    gl.querySelector('input').onchange = (e) => { w.gusts = e.target.checked; };
+    env.appendChild(gl);
+    const ex = app.tools.explosion;
+    this._slider(env, { label: 'Explosion radius', min: 1, max: 15, step: 0.1, value: ex.radius,
+      fmt: v => v.toFixed(1) + ' m', onInput: v => { ex.radius = v; } });
+    this._slider(env, { label: 'Explosion strength', min: 1, max: 50, step: 0.5, value: ex.strength,
+      fmt: v => v.toFixed(1), onInput: v => { ex.strength = v; } });
+
+    // Camera
+    $('chk-follow').onchange = (e) => { this.follow = e.target.checked; };
+    $('btn-focus').onclick = () => app.renderer.focus(app.interaction.selected);
+    $('btn-cam-reset').onclick = () => app.renderer.resetCamera();
+
+    // Physics params
+    const pl = $('param-list');
+    this.paramSliders = {};
+    for (const d of PARAM_DEFS) {
+      this.paramSliders[d.key] = this._slider(pl, { ...d, value: PARAMS[d.key],
+        onInput: v => { app.physics.setParam(d.key, v); app.presets.markCustom(); } });
+    }
+    $('btn-realistic').onclick = () => app.presets.apply('realistic');
+
+    // Character panel
+    const cm = $('char-modes');
+    this.modeBtns = {};
+    for (const [k, s] of Object.entries(CHARACTER_STATES)) {
+      const b = document.createElement('button');
+      b.className = 'btn'; b.textContent = `${s.icon} ${s.label}`;
+      b.onclick = () => { const r = this.selRagdoll(); if (r) { r.ctrl.setMode(k); this.refreshCharacters(); } };
+      cm.appendChild(b);
+      this.modeBtns[k] = b;
+    }
+    const turn = (fn) => () => { const r = this.selRagdoll(); if (r) { r.ctrl.target = null; r.ctrl.heading = normAngle(fn(r.ctrl.heading)); } };
+    $('btn-turn-l').onclick = turn(h => h + Math.PI / 4);
+    $('btn-turn-r').onclick = turn(h => h - Math.PI / 4);
+    $('btn-face-rand').onclick = turn(() => rand(-Math.PI, Math.PI));
+    $('btn-face-cam').onclick = turn(() => {
+      const d = new THREE.Vector3(); app.renderer.camera.getWorldDirection(d);
+      return Math.atan2(d.x, d.z);
+    });
+
+    this.syncTools();
+    this.syncPresetSelect();
+    this.refreshCharacters();
+    this.renderInspector();
+  }
+
+  selRagdoll() {
+    const s = this.app.interaction && this.app.interaction.selected;
+    return s && s.kind === 'ragdoll' ? s : null;
+  }
+
+  togglePause() {
+    const p = this.app.physics;
+    p.paused = !p.paused;
+    this.$('btn-play').innerHTML = p.paused ? '▶ <span class="lbl">Play</span>' : '⏸ <span class="lbl">Pause</span>';
+    this.$('btn-play').classList.toggle('primary', !p.paused);
+    this.$('btn-step').disabled = !p.paused;
+    this.$('viewport').classList.toggle('paused', p.paused);
+  }
+
+  syncTools() {
+    const t = this.app.tools;
+    for (const [k, b] of Object.entries(this.toolBtns)) b.classList.toggle('active', !t.spawnType && t.tool === k);
+    for (const [k, b] of Object.entries(this.spawnBtns)) b.classList.toggle('active', t.spawnType === k);
+    this.$('btn-spawn-ragdoll').classList.toggle('active', t.spawnType === 'ragdoll');
+    const c = this.app.renderer.canvas;
+    c.className = t.spawnType ? 'spawning' : 'tool-' + t.tool;
+    this.$('status-hint').textContent = t.spawnType
+      ? `Click to place ${t.spawnType === 'ragdoll' ? 'a ragdoll' : OBJECT_DEFS[t.spawnType].label} · shift-click places several · Q/E rotates · Esc cancels`
+      : TOOLS[t.tool].hint;
+  }
+
+  syncWind() { this.windSlider.set(this.app.tools.wind.strength); this.syncWindBtn(); }
+  syncWindBtn() { this.$('btn-wind').classList.toggle('active', this.app.tools.wind.strength > 0); }
+
+  syncParam(key) { const s = this.paramSliders && this.paramSliders[key]; if (s) s.set(PARAMS[key]); }
+  syncParams() { for (const k in this.paramSliders) this.syncParam(k); this.syncPresetSelect(); }
+  syncPresetSelect() { this.$('sel-preset').value = this.app.presets.active; }
+
+  refreshCharacters() {
+    const list = this.$('char-list'), app = this.app;
+    list.innerHTML = '';
+    const sel = app.interaction && app.interaction.selected;
+    for (const r of app.objects.ragdolls) {
+      const it = document.createElement('div');
+      it.className = 'char-item' + (r === sel ? ' sel' : '');
+      it.innerHTML = `<span class="dot" style="background:${r.props.shirt}"></span><span class="name"></span><span class="mode">${CHARACTER_STATES[r.ctrl.mode].label}</span><button class="x" title="Delete">✕</button>`;
+      it.querySelector('.name').textContent = r.props.name;
+      it.onclick = () => app.interaction.select(r);
+      it.querySelector('.x').onclick = (ev) => { ev.stopPropagation(); app.objects.remove(r); this.refreshCharacters(); };
+      list.appendChild(it);
+    }
+    if (!app.objects.ragdolls.length) list.innerHTML = '<p class="muted">No characters yet.</p>';
+    const r = this.selRagdoll();
+    this.$('char-panel').style.opacity = r ? 1 : 0.45;
+    this.$('char-name').textContent = r ? r.props.name : 'none selected';
+    for (const [k, b] of Object.entries(this.modeBtns)) { b.classList.toggle('active', !!r && r.ctrl.mode === k); b.disabled = !r; }
+    for (const id of ['btn-turn-l', 'btn-turn-r', 'btn-face-cam', 'btn-face-rand']) this.$(id).disabled = !r;
+    this.updateStatus();
+  }
+
+  updateStatus() {
+    const r = this.selRagdoll();
+    this.$('char-status').textContent = r ? `Status: ${r.ctrl.statusText()} · heading ${Math.round(r.ctrl.heading / DEG)}°` : 'Select a character to control it.';
+    const o = this.app.objects;
+    this.$('status-counts').textContent = `${o.ragdolls.length} ragdolls · ${o.entities.length - o.ragdolls.length} objects · ${this.app.physics.world.bodies.length} bodies`;
+  }
+
+  renderInspector() {
+    const box = this.$('inspector'), app = this.app, e = app.interaction && app.interaction.selected;
+    box.innerHTML = '';
+    if (!e) { box.innerHTML = '<p class="muted">Click an object or ragdoll with the Grab tool to inspect it.</p>'; return; }
+    const om = app.objects, p = e.props;
+    const title = document.createElement('div');
+    title.className = 'insp-title';
+    title.innerHTML = `<span></span><button class="btn danger" style="padding:1px 8px" title="Delete (Del)">✕</button>`;
+    title.querySelector('span').textContent = p.name;
+    title.querySelector('button').onclick = () => { om.remove(e); this.refreshCharacters(); };
+    box.appendChild(title);
+
+    const m = mat(p);
+    const info = document.createElement('p');
+    info.className = 'muted'; info.style.marginBottom = '8px';
+    box.appendChild(info);
+    const updateInfo = () => {
+      const mass = e.kind === 'ragdoll' ? e.rig.totalMass : e.bodies.reduce((s, b) => s + b.mass, 0);
+      info.textContent = p.isStatic ? 'Static' : `Mass ${mass.toFixed(1)} kg`;
+    };
+    updateInfo();
+
+    if (e.kind !== 'ragdoll') {
+      const f = document.createElement('div'); f.className = 'field';
+      f.innerHTML = '<label>Material</label>';
+      const s = document.createElement('select'); s.className = 'input';
+      for (const [k, mm] of Object.entries(MATERIALS)) s.add(new Option(mm.label, k));
+      s.value = p.material;
+      s.onchange = () => { om.setProp(e, 'material', s.value); this.renderInspector(); };
+      f.appendChild(s); box.appendChild(f);
+
+      const st = document.createElement('label'); st.className = 'check';
+      st.innerHTML = `<input type="checkbox" ${p.isStatic ? 'checked' : ''}> Static (fixed in place)`;
+      st.querySelector('input').onchange = (ev) => { om.setProp(e, 'isStatic', ev.target.checked); this.renderInspector(); };
+      box.appendChild(st);
+
+      if (!p.isStatic) {
+        const curMass = e.bodies[0].mass;
+        this._slider(box, { label: 'Mass', min: 0.5, max: Math.max(1000, curMass), step: 0.5, value: curMass,
+          fmt: v => v.toFixed(1) + ' kg', onInput: v => { om.setProp(e, 'mass', v); updateInfo(); } });
+      }
+      if (e.kind === 'object') {
+        const sizeFmt = v => v.toFixed(2) + ' m';
+        if (p.shape === 'box') {
+          ['Width', 'Height', 'Depth'].forEach((lab, i) => this._slider(box, { label: lab, min: 0.1, max: 8, step: 0.05,
+            value: p.size[i], fmt: sizeFmt, onInput: v => { om.setProp(e, 's' + 'xyz'[i], v); updateInfo(); } }));
+        } else {
+          this._slider(box, { label: 'Radius', min: 0.1, max: 2, step: 0.02, value: p.radius, fmt: sizeFmt,
+            onInput: v => { om.setProp(e, 'radius', v); updateInfo(); } });
+          if (p.shape === 'cylinder') this._slider(box, { label: 'Height', min: 0.1, max: 4, step: 0.05, value: p.height, fmt: sizeFmt,
+            onInput: v => { om.setProp(e, 'height', v); updateInfo(); } });
+        }
+        if (p.isStatic) {
+          this._slider(box, { label: 'Rotation (Q/E)', min: -180, max: 180, step: 1, value: (p.yaw || 0) / DEG,
+            fmt: v => Math.round(v) + '°', onInput: v => om.setProp(e, 'yaw', v * DEG) });
+          this._slider(box, { label: 'Tilt', min: -60, max: 60, step: 1, value: p.tilt || 0,
+            fmt: v => Math.round(v) + '°', onInput: v => om.setProp(e, 'tilt', v) });
+        }
+      }
+    } else {
+      this._slider(box, { label: 'Size (rebuilds)', min: 0.5, max: 2, step: 0.05, value: e.rig.scale, fmt: v => '×' + v.toFixed(2),
+        onChange: v => om.setProp(e, 'scale', v) });
+      this._slider(box, { label: 'Muscle strength', min: 0, max: 2, step: 0.05, value: e.ctrl.muscle, fmt: v => '×' + v.toFixed(2),
+        onInput: v => om.setProp(e, 'muscle', v) });
+    }
+    this._slider(box, { label: 'Friction', min: 0, max: 1.5, step: 0.01, value: p.friction ?? m.friction,
+      fmt: v => v.toFixed(2), onInput: v => om.setProp(e, 'friction', v) });
+    this._slider(box, { label: 'Bounciness', min: 0, max: 0.98, step: 0.01, value: p.restitution ?? m.restitution,
+      fmt: v => v.toFixed(2), onInput: v => om.setProp(e, 'restitution', v) });
+  }
+}
+
+/* =====================================================================
+ * App — wiring, default scene, main loop, keyboard
+ * ===================================================================== */
+class App {
+  constructor() {
+    const canvas = document.getElementById('world');
+    this.physics = new PhysicsManager(this);
+    this.renderer = new Renderer(this, canvas);
+    this.objects = new ObjectManager(this);
+    this.presets = new PresetManager(this);
+    this.tools = new ToolManager(this);
+    this.interaction = new InteractionManager(this);
+    this.ui = new UIManager(this);
+
+    this.physics.on('prestep', (dt) => {
+      this.tools.applyWind(dt);
+      this.presets.tick(dt);
+      for (const r of this.objects.ragdolls) r.ctrl.update(dt);
+    });
+    this.physics.on('poststep', () => this._footContacts());
+
+    const vp = document.getElementById('viewport');
+    new ResizeObserver(() => this.renderer.resize(vp.clientWidth, vp.clientHeight)).observe(vp);
+    this.renderer.resize(vp.clientWidth, vp.clientHeight);
+    window.addEventListener('keydown', (e) => this._key(e));
+
+    this.resetScene();
+    this.last = performance.now();
+    this.fpsT = 0; this.fpsN = 0; this.uiT = 0;
+    requestAnimationFrame((t) => this._frame(t));
+    window.__sandboxReady = true;
+    window.sandbox = this; // handy for debugging in the console
+  }
+
+  /** Mark ragdolls whose feet touch something below them (supports standing). */
+  _footContacts() {
+    for (const r of this.objects.ragdolls) r.ctrl.footDown = false;
+    const up = this.physics.up;
+    for (const c of this.physics.world.contacts) {
+      const a = c.bi, b = c.bj;
+      for (const [foot, other, sign] of [[a, b, -1], [b, a, 1]]) {
+        if (foot.partName !== 'lLegL' && foot.partName !== 'lLegR') continue;
+        if (other.ragdollId === foot.ragdollId) continue;
+        // c.ni points from bi to bj; normal pointing into the foot from the support:
+        const nx = c.ni.x * sign, ny = c.ni.y * sign, nz = c.ni.z * sign;
+        if (nx * up.x + ny * up.y + nz * up.z > 0.5) foot.entity.ctrl.footDown = true;
+      }
+    }
+  }
+
+  resetScene() {
+    this.interaction.select(null);
+    this.tools.cancelSpawn();
+    this.objects.clear();
+    ragdollCounter = 0;
+    const O = this.objects, v = (x, y, z) => new THREE.Vector3(x, y, z);
+    // A little playground
+    O.spawn('ramp', v(-7, 0, -3), 0);
+    O.spawn('platform', v(-3.62, 0, -3), 0);
+    O.spawn('wall', v(6, 0, -6), 0.4);
+    O.spawn('bouncy', v(7, 0, 3), 0);
+    O.spawn('bridge', v(0, 0, -9), 0);
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 3 - i; j++) O.spawn('crate', v(3 + j * 0.85 + i * 0.42, i * 0.8, 1), 0);
+    O.spawn('ball', v(-4, 0, 4));
+    O.spawn('rubberBall', v(-3, 0, 6));
+    O.spawn('barrel', v(5, 0, -2));
+    O.spawn('dominoes', v(-6, 0, 8), 0);
+    O.spawnRagdoll(v(-1.5, 0, 2), 0.3, 1, { mode: 'idle' });
+    O.spawnRagdoll(v(1.5, 0, 3), -2.5, 1, { mode: 'walk' });
+    O.spawnRagdoll(v(0, 0, 6), Math.PI, 1, { mode: 'sit' });
+    O.spawnRagdoll(v(0, 1.6, -9), Math.PI / 2, 1, { mode: 'idle' });
+    this.physics.acc = 0;
+    this.ui.refreshCharacters();
+  }
+
+  _key(e) {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+    const k = e.key.toLowerCase(), ui = this.ui, t = this.tools, it = this.interaction;
+    if (k === ' ') { e.preventDefault(); ui.togglePause(); }
+    else if (k === 'r') this.resetScene();
+    else if (k === 'w') t.toggleWind();
+    else if (k === 'escape') { t.cancelSpawn(); it.select(null); }
+    else if (k === 'delete' || k === 'backspace') { if (it.selected) { this.objects.remove(it.selected); ui.refreshCharacters(); } }
+    else if (k === 'q') it.rotate(1);
+    else if (k === 'e') it.rotate(-1);
+    else if (k === 'f') this.renderer.focus(it.selected);
+    else if (k === 'c') { ui.follow = !ui.follow; document.getElementById('chk-follow').checked = ui.follow; }
+    else for (const [name, tool] of Object.entries(TOOLS)) if (tool.key === k) t.setTool(name);
+  }
+
+  _frame(now) {
+    const dt = Math.min(0.1, (now - this.last) / 1000);
+    this.last = now;
+    if (this.interaction.drag && this.interaction.drag.kind === 'dynamic') this.interaction.drag.target.copy(this.interaction._dragTarget());
+    this.physics.update(dt);
+    this.interaction.updateHover();
+    this.renderer.render(dt);
+    this.fpsT += dt; this.fpsN++; this.uiT += dt;
+    if (this.fpsT >= 0.5) {
+      document.getElementById('stat-fps').textContent = Math.round(this.fpsN / this.fpsT) + ' FPS';
+      this.fpsT = 0; this.fpsN = 0;
+    }
+    if (this.uiT > 0.25) { this.uiT = 0; this.ui.updateStatus(); }
+    requestAnimationFrame((t) => this._frame(t));
+  }
+}
+
+new App();
+</script>
+</body>
+</html>
